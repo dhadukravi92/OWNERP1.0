@@ -1,4 +1,4 @@
-# PanelERP 🔌⚡
+# OWNERP 🔌⚡
 ### Enterprise Resource Planning for Panel Manufacturing & Electrical Industry
 
 A complete **offline-first desktop ERP** built with Electron + React + SQLite.
@@ -89,7 +89,7 @@ panel-erp/
 Running `npm run package` produces:
 ```
 dist/
-  PanelERP Setup 1.0.0.exe    ← Single-click Windows installer
+  ownERP Setup 1.0.0.exe    ← Single-click Windows installer
 ```
 
 The installer:
