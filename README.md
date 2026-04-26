@@ -2,7 +2,7 @@
 # OWNERP 🔌⚡
 =======
 >>>>>>> 9ecc3b0 (Initial commit)
-### Enterprise Resource Planning for Panel Manufacturing & Electrical Industry
+### Enterprise Resource Planning for Manufacturing Industry
 
 A complete **offline-first desktop ERP** built with Electron + React + SQLite.
 
