@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OWNERP HR Connect</title>
+  <style>
+    :root {
+      --bg: #f3f6fb;
+      --card: #ffffff;
+      --text: #14213d;
+      --muted: #64748b;
+      --border: #d8e1ee;
+      --primary: #2563eb;
+      --primary-soft: #dbeafe;
+      --success: #16a34a;
+      --warning: #d97706;
+      --danger: #dc2626;
+      --shadow: 0 20px 50px rgba(15, 23, 42, 0.1);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background:
+        radial-gradient(circle at top right, rgba(37, 99, 235, 0.16), transparent 28%),
+        linear-gradient(180deg, #f8fbff 0%, var(--bg) 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .shell {
+      width: min(100%, 460px);
+      margin: 0 auto;
+      padding: 20px 16px 28px;
+    }
+
+    .hero {
+      padding: 18px 18px 12px;
+    }
+
+    .kicker {
+      color: var(--primary);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 10px 0 8px;
+      font-size: 28px;
+      line-height: 1.05;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+      margin-top: 14px;
+    }
+
+    .hidden { display: none !important; }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 8px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    input {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px 15px;
+      font-size: 15px;
+      outline: none;
+      background: #fff;
+    }
+
+    input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+    }
+
+    .stack { display: grid; gap: 14px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    button {
+      border: none;
+      border-radius: 14px;
+      padding: 14px 16px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.12s ease, opacity 0.12s ease;
+    }
+
+    button:active { transform: translateY(1px); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+      width: 100%;
+    }
+
+    .btn-secondary {
+      background: #eef2ff;
+      color: var(--primary);
+    }
+
+    .btn-danger {
+      background: #fff1f2;
+      color: var(--danger);
+    }
+
+    .status {
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-size: 14px;
+      line-height: 1.5;
+      margin-bottom: 12px;
+    }
+
+    .status.info { background: #eff6ff; color: #1d4ed8; }
+    .status.success { background: #f0fdf4; color: #166534; }
+    .status.error { background: #fef2f2; color: #991b1b; }
+
+    .summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .tile {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 14px;
+      background: #fff;
+    }
+
+    .tile .label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 7px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .tile .value {
+      font-size: 20px;
+      font-weight: 800;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .access-link {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.82);
+    }
+
+    .access-link .label {
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 700;
+    }
+
+    .access-link .value {
+      word-break: break-all;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--primary);
+    }
+
+    .section-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .section-title h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .history-item {
+      border-top: 1px solid var(--border);
+      padding: 12px 0;
+      display: grid;
+      gap: 4px;
+    }
+
+    .history-item:first-child {
+      border-top: none;
+      padding-top: 0;
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .badge {
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .badge.present { background: #dcfce7; color: #166534; }
+    .badge.late, .badge.half_day { background: #fef3c7; color: #92400e; }
+    .badge.absent { background: #fee2e2; color: #991b1b; }
+    .badge.in_progress { background: #dbeafe; color: #1d4ed8; }
+    .badge.regularize_required { background: #fee2e2; color: #991b1b; }
+    .badge.idle { background: #e2e8f0; color: #334155; }
+
+    .footer-note {
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 18px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="hero">
+      <div class="kicker">Local Wi-Fi Access</div>
+      <h1>HR Connect</h1>
+      <div class="access-link">
+        <div class="label">Current Access Link</div>
+        <div id="currentAccessLink" class="value">Loading...</div>
+      </div>
+      <div class="subtitle">Employees can sign in with their own OWNERP credentials, review today’s HR attendance status, and punch in or punch out directly from mobile.</div>
+    </div>
+
+    <div id="loginCard" class="card">
+      <div id="loginStatus" class="status info hidden"></div>
+      <form id="loginForm" class="stack">
+        <div>
+          <label for="username">Username</label>
+          <input id="username" name="username" autocomplete="username" required />
+        </div>
+        <div>
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required />
+        </div>
+        <button class="btn-primary" type="submit">Sign In</button>
+      </form>
+      <div class="footer-note">This page works only while the OWNERP desktop app is open on the same local network.</div>
+    </div>
+
+    <div id="portal" class="hidden">
+      <div class="card">
+        <div class="section-title">
+          <div>
+            <h2 id="employeeName">Employee</h2>
+            <div id="employeeMeta" class="meta"></div>
+          </div>
+          <button id="logoutBtn" class="btn-danger" type="button">Logout</button>
+        </div>
+
+        <div id="portalStatus" class="status info hidden"></div>
+
+        <div class="summary">
+          <div class="tile">
+            <div class="label">Today</div>
+            <div id="todayStatus" class="value">Idle</div>
+          </div>
+          <div class="tile">
+            <div class="label">Worked</div>
+            <div id="todayHours" class="value">0.00 hrs</div>
+          </div>
+        </div>
+
+        <div class="summary">
+          <div class="tile">
+            <div class="label">Punch In</div>
+            <div id="todayIn" class="value">--:--</div>
+          </div>
+          <div class="tile">
+            <div class="label">Punch Out</div>
+            <div id="todayOut" class="value">--:--</div>
+          </div>
+        </div>
+
+        <div class="grid2" style="margin-top:14px;">
+          <button id="punchInBtn" class="btn-primary" type="button">Punch In</button>
+          <button id="punchOutBtn" class="btn-secondary" type="button">Punch Out</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">
+          <h2>Recent Attendance</h2>
+          <button id="refreshBtn" class="btn-secondary" type="button">Refresh</button>
+        </div>
+        <div id="historyList"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      token: localStorage.getItem('hrConnectToken') || '',
+      employee: null
+    };
+
+    const loginCard = document.getElementById('loginCard');
+    const loginForm = document.getElementById('loginForm');
+    const loginStatus = document.getElementById('loginStatus');
+    const portal = document.getElementById('portal');
+    const portalStatus = document.getElementById('portalStatus');
+    const currentAccessLink = document.getElementById('currentAccessLink');
+    const employeeName = document.getElementById('employeeName');
+    const employeeMeta = document.getElementById('employeeMeta');
+    const todayStatus = document.getElementById('todayStatus');
+    const todayHours = document.getElementById('todayHours');
+    const todayIn = document.getElementById('todayIn');
+    const todayOut = document.getElementById('todayOut');
+    const historyList = document.getElementById('historyList');
+    const punchInBtn = document.getElementById('punchInBtn');
+    const punchOutBtn = document.getElementById('punchOutBtn');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+
+    currentAccessLink.textContent = window.location.href;
+
+    function showBox(element, type, message) {
+      element.className = `status ${type}`;
+      element.textContent = message;
+      element.classList.remove('hidden');
+    }
+
+    function hideBox(element) {
+      element.classList.add('hidden');
+      element.textContent = '';
+    }
+
+    function formatHours(value) {
+      return `${Number(value || 0).toFixed(2)} hrs`;
+    }
+
+    function getStatusLabel(row) {
+      if (!row) return 'Idle';
+      if (row.check_in && !row.check_out) return 'punch open';
+      return (row.status || 'idle').replace('_', ' ');
+    }
+
+    function getStatusKey(row) {
+      if (!row) return 'idle';
+      if (row.check_in && !row.check_out) return 'in_progress';
+      return row.status || 'idle';
+    }
+
+    async function api(path, options = {}) {
+      const response = await fetch(path, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}),
+          ...(options.headers || {})
+        }
+      });
+      const data = await response.json();
+      if (!response.ok || data.success === false) {
+        throw new Error(data.error || data.message || 'Request failed.');
+      }
+      return data;
+    }
+
+    function renderHistory(history) {
+      historyList.innerHTML = '';
+      if (!history || history.length === 0) {
+        historyList.innerHTML = '<div class="meta">Attendance history will appear here after your punch activity starts.</div>';
+        return;
+      }
+
+      history.forEach((row) => {
+        const item = document.createElement('div');
+        item.className = 'history-item';
+        item.innerHTML = `
+          <div class="row">
+            <strong>${row.attendance_date || '-'}</strong>
+            <span class="badge ${getStatusKey(row)}">${getStatusLabel(row)}</span>
+          </div>
+          <div class="meta">In ${row.check_in || '--:--'} | Out ${row.check_out || '--:--'} | ${formatHours(row.hours_worked)}</div>
+          <div class="meta">${row.notes || row.work_mode || ''}</div>
+        `;
+        historyList.appendChild(item);
+      });
+    }
+
+    function renderPortal(payload) {
+      state.employee = payload.employee;
+      loginCard.classList.add('hidden');
+      portal.classList.remove('hidden');
+
+      employeeName.textContent = payload.employee.full_name || 'Employee';
+      employeeMeta.textContent = [
+        payload.employee.employee_code,
+        payload.employee.designation,
+        payload.employee.department
+      ].filter(Boolean).join(' | ');
+
+      const row = payload.todayAttendance || null;
+      todayStatus.textContent = getStatusLabel(row);
+      todayHours.textContent = formatHours(row ? row.hours_worked : 0);
+      todayIn.textContent = row && row.check_in ? row.check_in : '--:--';
+      todayOut.textContent = row && row.check_out ? row.check_out : '--:--';
+
+      punchInBtn.disabled = Boolean(row && row.check_in);
+      punchOutBtn.disabled = !row || !row.check_in || Boolean(row.check_out);
+
+      renderHistory(payload.history || []);
+    }
+
+    async function loadPortal() {
+      try {
+        hideBox(portalStatus);
+        const payload = await api('/api/hr-connect/me');
+        renderPortal(payload);
+      } catch (error) {
+        localStorage.removeItem('hrConnectToken');
+        state.token = '';
+        portal.classList.add('hidden');
+        loginCard.classList.remove('hidden');
+        showBox(loginStatus, 'error', error.message);
+      }
+    }
+
+    loginForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      hideBox(loginStatus);
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+
+      try {
+        const payload = await api('/api/hr-connect/login', {
+          method: 'POST',
+          body: JSON.stringify({ username, password })
+        });
+        state.token = payload.token;
+        localStorage.setItem('hrConnectToken', payload.token);
+        await loadPortal();
+      } catch (error) {
+        showBox(loginStatus, 'error', error.message);
+      }
+    });
+
+    async function handlePunch(mode) {
+      try {
+        hideBox(portalStatus);
+        const payload = await api('/api/hr-connect/punch', {
+          method: 'POST',
+          body: JSON.stringify({ mode })
+        });
+        showBox(portalStatus, 'success', payload.message || 'Attendance updated.');
+        renderPortal({
+          employee: state.employee,
+          todayAttendance: payload.todayAttendance,
+          history: payload.history
+        });
+      } catch (error) {
+        showBox(portalStatus, 'error', error.message);
+      }
+    }
+
+    punchInBtn.addEventListener('click', () => handlePunch('in'));
+    punchOutBtn.addEventListener('click', () => handlePunch('out'));
+    refreshBtn.addEventListener('click', loadPortal);
+    logoutBtn.addEventListener('click', async () => {
+      try {
+        await api('/api/hr-connect/logout', { method: 'POST', body: '{}' });
+      } catch (_) {}
+      localStorage.removeItem('hrConnectToken');
+      state.token = '';
+      portal.classList.add('hidden');
+      loginCard.classList.remove('hidden');
+      hideBox(portalStatus);
+      showBox(loginStatus, 'info', 'Signed out successfully.');
+    });
+
+    if (state.token) {
+      loadPortal();
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+chooseInstallationOptions:
+  en: Choose Installation Mode
+whoShouldThisApplicationBeInstalledFor:
+  en: Which OWNERP installation mode do you want to use?
+selectUserMode:
+  en: Select whether OWNERP should run as a shared Master System for this computer or as a User System only for the current Windows user.
+forAll:
+  en: Master System (&all users)
+onlyForMe:
+  en: User System (&me)
+freshInstallForAll:
+  en: Master System install for all users. (will prompt for admin credentials)
+freshInstallForCurrent:
+  en: User System install for the current user only.
+perMachineInstallExists:
+  en: There is already a Master System installation.
+perMachineInstall:
+  en: There is a Master System installation.
+perUserInstallExists:
+  en: There is already a User System installation.
+perUserInstall:
+  en: There is a User System installation.
