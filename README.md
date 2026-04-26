@@ -1,7 +1,6 @@
 <<<<<<< HEAD
 # OWNERP 🔌⚡
 =======
-# PanelERP 🔌⚡
 >>>>>>> 9ecc3b0 (Initial commit)
 ### Enterprise Resource Planning for Panel Manufacturing & Electrical Industry
 
