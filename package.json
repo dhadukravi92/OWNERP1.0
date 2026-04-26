@@ -1,0 +1,98 @@
+{
+  "name": "ownerp",
+  "version": "1.0.0",
+  "description": "OWNERP ERP System for Panel Manufacturing & Electrical Industry",
+  "main": "electron/main.js",
+  "homepage": "./",
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "electron": "electron .",
+    "electron-dev": "concurrently \"cross-env BROWSER=none react-scripts start\" \"wait-on http://localhost:3000 && electron .\"",
+    "package": "npm run build && electron-builder --win --x64",
+    "package-all": "npm run build && electron-builder -mwl"
+  },
+  "dependencies": {
+    "@tensorflow/tfjs": "^4.22.0",
+    "axios": "^1.14.0",
+    "better-sqlite3": "^9.6.0",
+    "chart.js": "^4.4.2",
+    "date-fns": "^3.3.1",
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.3.9",
+    "exceljs": "^4.4.0",
+    "jspdf": "^2.5.2",
+    "jspdf-autotable": "^3.8.4",
+    "lucide-react": "^0.344.0",
+    "nodemailer": "^8.0.4",
+    "react": "^18.2.0",
+    "react-chartjs-2": "^5.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.22.3",
+    "react-scripts": "5.0.1",
+    "recharts": "^2.12.2",
+    "uuid": "^9.0.1",
+    "zustand": "^4.5.2"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^29.1.4",
+    "electron-builder": "^24.13.3",
+    "pkg": "^5.8.1",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.ownerp.app",
+    "productName": "OWNERP",
+    "copyright": "Copyright 2024 OWNERP",
+    "directories": {
+      "output": "dist",
+      "buildResources": "resources"
+    },
+    "files": [
+      "build/**/*",
+      "electron/**/*",
+      "public/**/*",
+      "node_modules/**/*"
+    ],
+    "extraMetadata": {
+      "main": "electron/main.js"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "OWNERP",
+      "include": "scripts/installer.nsh",
+      "warningsAsErrors": false
+    }
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version"
+    ]
+  }
+}
