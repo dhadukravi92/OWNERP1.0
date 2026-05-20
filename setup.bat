@@ -1,13 +1,15 @@
 @echo off
-title PanelERP - Setup Script
+title OwnERP - Setup Script
 color 0A
 
 echo.
 echo  ========================================
-echo   PanelERP - Panel Manufacturing ERP
+echo   OwnERP - Generic Business ERP
 echo   Automated Setup Script
 echo  ========================================
 echo.
+
+call "%~dp0scripts\ensure-tooling.bat"
 
 :: Check Node.js
 echo [1/5] Checking Node.js...
@@ -33,9 +35,19 @@ IF %ERRORLEVEL% NEQ 0 (
 FOR /F "tokens=*" %%i IN ('npm --version') DO SET NPM_VER=%%i
 echo  [OK] npm found: v%NPM_VER%
 
+:: Check Git
+echo [3/6] Checking Git...
+git --version >nul 2>&1
+IF %ERRORLEVEL% NEQ 0 (
+    echo  [WARNING] Git not found on PATH. Project scripts will still run, but version control commands may fail in this shell.
+) ELSE (
+    FOR /F "tokens=*" %%i IN ('git --version') DO SET GIT_VER=%%i
+    echo  [OK] %GIT_VER%
+)
+
 :: Install dependencies
 echo.
-echo [3/5] Installing dependencies (this may take 5-10 minutes)...
+echo [4/6] Installing dependencies (this may take 5-10 minutes)...
 echo  Please wait...
 npm install
 IF %ERRORLEVEL% NEQ 0 (
@@ -47,16 +59,26 @@ echo  [OK] Dependencies installed
 
 :: Rebuild native modules
 echo.
-echo [4/5] Rebuilding native modules for Electron...
+echo [5/6] Rebuilding native modules for Electron...
 npm rebuild better-sqlite3 --runtime=electron --target=29.1.4 --disturl=https://electronjs.org/headers --abi=121
 IF %ERRORLEVEL% NEQ 0 (
     echo  [WARNING] Rebuild had warnings - this may be OK
 )
 echo  [OK] Native modules ready
 
+:: Check graphify wrapper
+echo.
+echo [6/6] Checking graphify wrapper...
+call "%~dp0graphify.cmd" --help >nul 2>&1
+IF %ERRORLEVEL% NEQ 0 (
+    echo  [WARNING] graphify wrapper is not ready yet. Verify Python 3.14 and the graphify package are installed.
+) ELSE (
+    echo  [OK] graphify wrapper is ready
+)
+
 :: Done
 echo.
-echo [5/5] Setup complete!
+echo Setup complete!
 echo.
 echo  ========================================
 echo   READY TO USE!
