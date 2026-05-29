@@ -1,7 +1,7 @@
-# OWNERP Operations Manual
+# OwnERP Operations Manual
 ## Module-by-Module Operating Guide
 
-This manual is for day-to-day users, supervisors, and administrators who operate OWNERP after installation.
+This manual is for day-to-day users, supervisors, and administrators who operate OwnERP after installation.
 
 It explains:
 - what each module is used for
@@ -37,7 +37,7 @@ It explains:
 
 ## 1. Purpose and User Roles
 
-OWNERP is designed to run the operating cycle of a panel manufacturing or electrical business across commercial, stock, accounting, HR, and admin workflows.
+OwnERP is designed to run the operating cycle of a growing business across commercial, stock, accounting, HR, CRM, reporting, and admin workflows.
 
 Typical roles:
 - `Admin`: full access, setup, users, backup, company controls
@@ -48,7 +48,7 @@ Typical roles:
 
 ## 2. Operating Sequence
 
-A common business flow in OWNERP is:
+A common business flow in OwnERP is:
 
 1. Create products in `Catalogue`
 2. Create customers and vendors in `Contacts`
@@ -665,7 +665,7 @@ Main cards:
 - `Google Drive / Cloud Backup`
 - `Database Backup`
 - `Accounting Database`
-- `About OWNERP`
+- `About OwnERP`
 
 ---
 

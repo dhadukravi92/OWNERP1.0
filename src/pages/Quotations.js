@@ -3,19 +3,24 @@ import db, { generateId, formatCurrency, formatDate, getNextSequence, generateDo
 import { Plus, Search, Edit2, Copy, FileText, Printer, X, Trash2 } from 'lucide-react';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import { useAppStore } from '../store/appStore';
+import { getDocumentTemplateDefaults } from '../utils/documentTemplates';
 
 function QuotationModal({ quotation, onClose, onSave }) {
   const { currentUser, settings } = useAppStore();
+  const quotationDefaults = getDocumentTemplateDefaults(settings, 'quotation');
+  const defaultSubject = quotationDefaults.subject;
+  const defaultMailDraft = quotationDefaults.mailDraft;
+  const defaultTerms = quotationDefaults.terms;
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [form, setForm] = useState({
     customer_id: '',
     valid_till: '',
     discount_percent: 0,
-    subject: '',
-    mail_draft: '',
+    subject: defaultSubject,
+    mail_draft: defaultMailDraft,
     notes: '',
-    terms: ''
+    terms: defaultTerms
   });
   const [items, setItems] = useState([{ id: generateId(), product_id: '', description: '', quantity: 1, unit_price: 0, tax_rate: 18, discount_percent: 0 }]);
 
@@ -23,6 +28,16 @@ function QuotationModal({ quotation, onClose, onSave }) {
     loadLookups();
     if (quotation?.id) loadQuotation();
   }, []);
+
+  useEffect(() => {
+    if (quotation?.id) return;
+    setForm((prev) => ({
+      ...prev,
+      subject: prev.subject || defaultSubject,
+      mail_draft: prev.mail_draft || defaultMailDraft,
+      terms: prev.terms || defaultTerms
+    }));
+  }, [defaultMailDraft, defaultSubject, defaultTerms, quotation?.id]);
 
   const loadLookups = async () => {
     const [custs, prods] = await Promise.all([

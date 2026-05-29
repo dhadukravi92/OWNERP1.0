@@ -1,10 +1,10 @@
-﻿  ΓÇó electron-builder  version=24.13.3 os=10.0.19045
+  ΓÇó electron-builder  version=24.13.3 os=10.0.19045
   ΓÇó loaded configuration  file=package.json ("build" field)
   ΓÇó public/electron.js not found. Please see https://medium.com/@kitze/%EF%B8%8F-from-react-to-an-electron-app-ready-for-production-a0468ecb1da3
   ΓÇó loaded parent configuration  preset=react-cra
-  ΓÇó author is missed in the package.json  appPackageFile=D:\PanelERP\Panel-erp\package.json
+  ΓÇó author is missed in the package.json  appPackageFile=D:\OwnERP\OwnERP\package.json
   ΓÇó rebuilding native dependencies  dependencies=better-sqlite3@9.6.0 platform=win32 arch=x64
   ΓÇó install prebuilt binary  name=better-sqlite3 version=9.6.0 platform=win32 arch=x64 napi=
   ΓÇó packaging       platform=win32 arch=x64 electron=29.4.6 appOutDir=dist\win-unpacked
   ΓÇó default Electron icon is used  reason=application icon is not set
-  ΓÇó building        target=nsis file=dist\PanelERP Setup 1.0.0.exe archs=x64 oneClick=false perMachine=false
+  ΓÇó building        target=nsis file=dist\OwnERP Setup 1.0.0.exe archs=x64 oneClick=false perMachine=false

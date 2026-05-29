@@ -1,11 +1,7 @@
-<<<<<<< HEAD
-# OWNERP 🔌⚡
-=======
-# PanelERP 🔌⚡
->>>>>>> 9ecc3b0 (Initial commit)
-### Enterprise Resource Planning for Panel Manufacturing & Electrical Industry
+# OwnERP 🔌⚡
+### Generic Enterprise Resource Planning for growing businesses
 
-A complete **offline-first desktop ERP** built with Electron + React + SQLite.
+A complete **offline-first desktop ERP** built with Electron + React + SQLite for sales, inventory, finance, CRM, HR, operations, and reporting.
 
 ---
 
@@ -68,7 +64,7 @@ Or just double-click `setup.bat` (Windows)
 ## 📁 Project Structure
 
 ```
-panel-erp/
+ownerp/
 ├── electron/
 │   ├── main.js          # Electron main process + SQLite DB
 │   └── preload.js       # Secure IPC bridge
@@ -93,11 +89,7 @@ panel-erp/
 Running `npm run package` produces:
 ```
 dist/
-<<<<<<< HEAD
-  ownERP Setup 1.0.0.exe    ← Single-click Windows installer
-=======
-  PanelERP Setup 1.0.0.exe    ← Single-click Windows installer
->>>>>>> 9ecc3b0 (Initial commit)
+  OwnERP Setup 1.0.0.exe    ← Single-click Windows installer
 ```
 
 The installer:
@@ -110,15 +102,15 @@ The installer:
 
 ## 💾 Data Storage
 
-- Database: `%APPDATA%\PanelERP\panelerp.db` (SQLite)
-- Backups: `%APPDATA%\PanelERP\backups\`
-- Logs: `%APPDATA%\PanelERP\logs\`
+- Database: `%APPDATA%\OwnERP\ownerp.db` (SQLite)
+- Backups: `%APPDATA%\OwnERP\backups\`
+- Logs: `%APPDATA%\OwnERP\logs\`
 
 ---
 
 ## Google Drive Backup Setup
 
-OWNERP now supports two backup modes:
+OwnERP now supports two backup modes:
 - `Google Drive API Login`: direct upload to Google Drive using a saved OAuth login
 - `Local Synced Folder`: save to a local folder already synced by Google Drive desktop
 
@@ -129,7 +121,7 @@ For the direct Google Drive login method:
 4. Create an OAuth client of type `Desktop app`
 5. Copy the `Client ID` and `Client Secret`
 6. Create or choose a Google Drive folder and copy its folder URL or folder ID
-7. In OWNERP, open `Settings -> Backup & Data`
+7. In OwnERP, open `Settings -> Backup & Data`
 8. Choose `Backup Provider -> Google Drive API Login`
 9. Enter the Google client values and Drive folder URL/ID
 10. Click `Save Drive Login Settings`
@@ -137,15 +129,15 @@ For the direct Google Drive login method:
 12. Enable auto backup and click `Run Backup Now` once for testing
 
 Saved login details:
-- OWNERP does not store the Google password
-- OWNERP stores the reusable refresh token in the local desktop app config on this PC
+- OwnERP does not store the Google password
+- OwnERP stores the reusable refresh token in the local desktop app config on this PC
 - The app shows the exact token storage path in `Settings -> Backup & Data -> Login Storage`
 
 For the full step-by-step manual, see:
-- [docs/INSTALLATION_GUIDE.md](/d:/PanelERP/Panel-erp/docs/INSTALLATION_GUIDE.md)
+- [docs/INSTALLATION_GUIDE.md](/d:/OwnERP/OwnERP/docs/INSTALLATION_GUIDE.md)
 
 For the day-to-day module and form usage guide, see:
-- [docs/OPERATIONS_MANUAL.md](/d:/PanelERP/Panel-erp/docs/OPERATIONS_MANUAL.md)
+- [docs/OPERATIONS_MANUAL.md](/d:/OwnERP/OwnERP/docs/OPERATIONS_MANUAL.md)
 
 ---
 

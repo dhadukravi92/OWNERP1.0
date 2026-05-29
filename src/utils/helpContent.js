@@ -3,10 +3,10 @@ import { canAccessModule, canAccessSettings } from './modules';
 export const HELP_ARTICLES = [
   {
     id: 'overview',
-    title: 'OWNERP Overview',
+    title: 'OwnERP Overview',
     section: 'Getting Started',
     tags: ['overview', 'erp', 'modules', 'workflow', 'start'],
-    content: `OWNERP is a desktop ERP for panel manufacturing and electrical businesses. A common operating flow is: create products, maintain contacts, build BOMs, issue quotations, create orders, receive material through GRN, manage stock, post accounting transactions, and review reports, alerts, and dashboard signals. Admin users control setup, backups, users, and module access.`
+    content: `OwnERP is a desktop ERP for growing businesses that need one place for sales, inventory, CRM, accounting, HR, reporting, and administration. A common operating flow is: create products, maintain contacts, issue quotations, create orders, receive material through GRN, manage stock, post accounting transactions, and review reports, alerts, and dashboard signals. Admin users control setup, backups, users, and module access.`
   },
   {
     id: 'login-roles',
@@ -189,7 +189,7 @@ export const HELP_ARTICLES = [
     section: 'Cloud Backup',
     requiresSettings: true,
     tags: ['google drive', 'backup', 'oauth', 'client id', 'client secret', 'folder id', 'cloud'],
-    content: `For direct Google Drive backup, open Google Cloud Console, enable Google Drive API, configure the OAuth consent screen, and create a Desktop App OAuth client. In OWNERP Settings, choose Backup Provider as Google Drive API Login, enter Client ID, Client Secret, and Drive folder URL or folder ID, then save and connect Google Drive. OWNERP creates both backup files locally and uploads them automatically to the selected Drive month folder.`
+    content: `For direct Google Drive backup, open Google Cloud Console, enable Google Drive API, configure the OAuth consent screen, and create a Desktop App OAuth client. In OwnERP Settings, choose Backup Provider as Google Drive API Login, enter Client ID, Client Secret, and Drive folder URL or folder ID, then save and connect Google Drive. OwnERP creates both backup files locally and uploads them automatically to the selected Drive month folder.`
   },
   {
     id: 'google-drive-security',
@@ -197,7 +197,7 @@ export const HELP_ARTICLES = [
     section: 'Cloud Backup',
     requiresSettings: true,
     tags: ['google drive', 'token', 'security', 'refresh token', 'login storage'],
-    content: `OWNERP does not store the Google password. It stores the Google OAuth refresh token in the local desktop app configuration on the PC so scheduled uploads can continue without repeated login prompts. The app shows the Login Storage path inside Settings. For stronger protection in production, token storage should be moved to Windows-protected storage such as DPAPI or Credential Manager.`
+    content: `OwnERP does not store the Google password. It stores the Google OAuth refresh token in the local desktop app configuration on the PC so scheduled uploads can continue without repeated login prompts. The app shows the Login Storage path inside Settings. For stronger protection in production, token storage should be moved to Windows-protected storage such as DPAPI or Credential Manager.`
   },
   {
     id: 'daily-routine',

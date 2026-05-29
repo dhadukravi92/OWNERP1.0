@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   BookOpen, ReceiptText, Scale, ShieldCheck, Wallet, Building2, BrainCircuit,
-  Database, Download, Plus, Save, RefreshCw, AlertTriangle, CheckCircle2, Landmark, X
+  Database, Download, Plus, Save, RefreshCw, AlertTriangle, CheckCircle2, Landmark, X,
+  User, Phone, MapPin, DollarSign, Zap, Package, Search, Trash, Edit2
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import db, { formatCurrency, formatDate, generateId } from '../utils/database';
 import accountingDb from '../utils/accountingDatabase';
 import { answerAccountingQuestion, buildAccountingSuggestions } from '../utils/accountingAdvisor';
+import { getDocumentTemplateDefaults } from '../utils/documentTemplates';
 import VoucherWorkbench from '../components/accounting/VoucherWorkbench';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -14,6 +16,34 @@ import autoTable from 'jspdf-autotable';
 const today = () => new Date().toISOString().slice(0, 10);
 const newLine = () => ({ product_id: '', product_name: '', hsn_sac: '', quantity: 1, unit: 'PCS', rate: 0, gst_rate: 18 });
 const newProformaLine = () => ({ id: generateId(), product_id: '', description: '', quantity: 1, unit_price: 0, tax_rate: 18 });
+const newQuickProductForm = () => ({ name: '', code: '', description: '', unit: 'PCS', hsn_code: '', gst_rate: 18, selling_price: 0, cost_price: 0 });
+const newCustomerContactForm = () => ({
+  type: 'customer',
+  name: '',
+  company: '',
+  email: '',
+  phone: '',
+  address: '',
+  city: '',
+  state: '',
+  gst_number: '',
+  pan_number: '',
+  credit_limit: 0,
+  account_holder_name: '',
+  bank_name: '',
+  branch_name: '',
+  account_number: '',
+  account_type: 'current',
+  ifsc_code: '',
+  swift_code: '',
+  iban: '',
+  upi_id: '',
+  preferred_payment_method: 'bank_transfer',
+  payment_terms_days: 0,
+  bank_address: '',
+  notes: ''
+});
+const newVendorContactForm = () => ({ ...newCustomerContactForm(), type: 'vendor' });
 const generateProformaNumber = () => `PI-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
 const generateVoucherNumber = (prefix) => `${prefix}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
 const shiftDate = (dateString, days) => {
@@ -110,6 +140,7 @@ export default function Accounting() {
   const { settings, currentUser, addNotification } = useAppStore();
   const currencySymbol = settings.currency_symbol || '\u20B9';
   const companyState = settings.company_state || 'Gujarat';
+  const proformaDefaults = getDocumentTemplateDefaults(settings, 'proforma');
 
   const [activeTab, setActiveTab] = useState('overview');
   const [status, setStatus] = useState(null);
@@ -140,7 +171,7 @@ export default function Accounting() {
   const [accountingSettings, setAccountingSettings] = useState({});
   const [metrics, setMetrics] = useState({ receivables: 0, overdue: 0, payables: 0, cash: 0, outputTax: 0, inputTax: 0, assetBase: 0, pendingJournals: 0, hsnGaps: 0 });
   const [bridge, setBridge] = useState({ customers: 0, vendors: 0, orders: 0, grns: 0 });
-  const [salesForm, setSalesForm] = useState({ customer_id: '', customer_name: '', customer_gst: '', source_order_id: '', invoice_date: today(), due_date: today(), place_of_supply: companyState, supply_type: 'intra-state', notes: '', items: [newLine()] });
+  const [salesForm, setSalesForm] = useState({ customer_id: '', customer_name: '', customer_gst: '', source_order_id: '', source_proforma_id: '', source_proforma_number: '', invoice_date: today(), due_date: today(), place_of_supply: companyState, supply_type: 'intra-state', notes: '', items: [newLine()] });
   const [purchaseForm, setPurchaseForm] = useState({ vendor_id: '', vendor_name: '', vendor_gst: '', source_grn_id: '', bill_date: today(), due_date: today(), place_of_supply: companyState, supply_type: 'intra-state', itc_eligible: true, notes: '', items: [newLine()] });
   const [receiptForm, setReceiptForm] = useState({ customer_id: '', bank_account_id: '', receipt_date: today(), payment_mode: 'bank_transfer', reference_number: '', narration: '', allocations: [] });
   const [paymentForm, setPaymentForm] = useState({ vendor_id: '', bank_account_id: '', payment_date: today(), payment_mode: 'bank_transfer', reference_number: '', narration: '', allocations: [] });
@@ -149,6 +180,9 @@ export default function Accounting() {
   const [assetForm, setAssetForm] = useState({ asset_name: '', category: 'Plant & Machinery', capitalization_date: today(), gross_value: 0, salvage_value: 0, useful_life_months: 60, depreciation_method: 'SLM', linked_purchase_bill_id: '' });
   const [proformaModalOpen, setProformaModalOpen] = useState(false);
   const [editingProformaId, setEditingProformaId] = useState(null);
+  const [quickProductModalOpen, setQuickProductModalOpen] = useState(false);
+  const [quickProductLineId, setQuickProductLineId] = useState(null);
+  const [quickProductForm, setQuickProductForm] = useState(newQuickProductForm());
   const [partyLedgerModalOpen, setPartyLedgerModalOpen] = useState(false);
   const [partyLedgerLoading, setPartyLedgerLoading] = useState(false);
   const [partyLedgerData, setPartyLedgerData] = useState(null);
@@ -164,14 +198,29 @@ export default function Accounting() {
     issue_date: today(),
     valid_till: shiftDate(today(), 7),
     status: 'draft',
-    subject: '',
-    mail_draft: 'Dear Sir/Madam,\n\nPlease find attached our proforma invoice for your review. Kindly confirm the commercials and revert with your approval.\n\nThanks & Regards,',
+    subject: proformaDefaults.subject,
+    mail_draft: proformaDefaults.mailDraft,
     notes: '',
-    terms: 'This is a proforma invoice and not a tax invoice. Material dispatch and final tax invoice will follow confirmation and payment terms.',
+    terms: proformaDefaults.terms,
     items: [newProformaLine()]
   });
   const [advisorQuestion, setAdvisorQuestion] = useState('');
   const [advisorAnswer, setAdvisorAnswer] = useState('');
+  const [customerSearchModal, setCustomerSearchModal] = useState(false);
+  const [vendorSearchModal, setVendorSearchModal] = useState(false);
+  const [customerEditorOpen, setCustomerEditorOpen] = useState(false);
+  const [editingCustomerId, setEditingCustomerId] = useState(null);
+  const [customerContactForm, setCustomerContactForm] = useState(newCustomerContactForm());
+  const [customerContactErrors, setCustomerContactErrors] = useState({});
+  const [vendorEditorOpen, setVendorEditorOpen] = useState(false);
+  const [editingVendorId, setEditingVendorId] = useState(null);
+  const [vendorContactForm, setVendorContactForm] = useState(newVendorContactForm());
+  const [vendorContactErrors, setVendorContactErrors] = useState({});
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [vendorSearch, setVendorSearch] = useState('');
+  const [productSearchModal, setProductSearchModal] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
+  const [productLineMode, setProductLineMode] = useState(null); // 'sales' or 'purchase'
   const accountingTabHotkeys = useMemo(
     () => Object.fromEntries(ACCOUNTING_TABS.map((tab) => [tab.hotkey.toUpperCase(), tab.id])),
     []
@@ -366,6 +415,36 @@ export default function Accounting() {
     return { account_id: account?.id || null, account_code: code, account_name: account?.name || fallback };
   };
 
+  const applyCustomerToSalesForm = (customer) => {
+    if (!customer) return;
+    const supply_type = customer.state && customer.state !== companyState ? 'inter-state' : 'intra-state';
+    const paymentTermsDays = Number(customer.payment_terms_days || 0);
+    setSalesForm((prev) => ({
+      ...prev,
+      customer_id: customer.id,
+      customer_name: customer.company || customer.name,
+      customer_gst: customer.gst_number || '',
+      place_of_supply: customer.state || companyState,
+      supply_type,
+      due_date: shiftDate(prev.invoice_date, paymentTermsDays)
+    }));
+  };
+
+  const applyVendorToPurchaseForm = (vendor) => {
+    if (!vendor) return;
+    const supply_type = vendor.state && vendor.state !== companyState ? 'inter-state' : 'intra-state';
+    const paymentTermsDays = Number(vendor.payment_terms_days || 0);
+    setPurchaseForm((prev) => ({
+      ...prev,
+      vendor_id: vendor.id,
+      vendor_name: vendor.company || vendor.name,
+      vendor_gst: vendor.gst_number || '',
+      place_of_supply: vendor.state || companyState,
+      supply_type,
+      due_date: shiftDate(prev.bill_date, paymentTermsDays)
+    }));
+  };
+
   const loadAll = async () => {
     setLoading(true);
     try {
@@ -382,7 +461,7 @@ export default function Accounting() {
             AND LOWER(COALESCE(username, '')) <> 'developer'
           ORDER BY COALESCE(full_name, username)
         `),
-        db.all("SELECT id, name, hsn_code, gst_rate, selling_price, cost_price, unit FROM products WHERE is_active=1 ORDER BY name"),
+        db.all("SELECT id, name, code, description, hsn_code, gst_rate, selling_price, cost_price, unit FROM products WHERE is_active=1 ORDER BY name"),
         db.all("SELECT id, order_number FROM orders ORDER BY created_at DESC LIMIT 20"),
         db.all("SELECT id, grn_number FROM grn ORDER BY created_at DESC LIMIT 20"),
         db.all(`SELECT p.*, c.name as customer_name, c.company as customer_company, o.order_number
@@ -511,29 +590,217 @@ export default function Accounting() {
   const setParty = (type, id) => {
     const party = (type === 'customer' ? customers : vendors).find((entry) => entry.id === id);
     if (!party) return;
-    const supply_type = party.state && party.state !== companyState ? 'inter-state' : 'intra-state';
-    const paymentTermsDays = Number(party.payment_terms_days || 0);
     if (type === 'customer') {
-      setSalesForm({
-        ...salesForm,
-        customer_id: party.id,
-        customer_name: party.company || party.name,
-        customer_gst: party.gst_number || '',
-        place_of_supply: party.state || companyState,
-        supply_type,
-        due_date: shiftDate(salesForm.invoice_date, paymentTermsDays)
-      });
+      applyCustomerToSalesForm(party);
     }
     if (type === 'vendor') {
-      setPurchaseForm({
-        ...purchaseForm,
-        vendor_id: party.id,
-        vendor_name: party.company || party.name,
-        vendor_gst: party.gst_number || '',
-        place_of_supply: party.state || companyState,
-        supply_type,
-        due_date: shiftDate(purchaseForm.bill_date, paymentTermsDays)
+      applyVendorToPurchaseForm(party);
+    }
+  };
+
+  const openCustomerContactEditor = (customer = null) => {
+    setEditingCustomerId(customer?.id || null);
+    setCustomerContactForm({ ...newCustomerContactForm(), ...(customer || {}), type: 'customer' });
+    setCustomerContactErrors({});
+    setCustomerEditorOpen(true);
+  };
+
+  const closeCustomerContactEditor = () => {
+    setCustomerEditorOpen(false);
+    setEditingCustomerId(null);
+    setCustomerContactForm(newCustomerContactForm());
+    setCustomerContactErrors({});
+  };
+
+  const updateCustomerContactField = (field, value) => {
+    setCustomerContactForm((prev) => ({ ...prev, [field]: value }));
+    setCustomerContactErrors((prev) => ({ ...prev, [field]: '' }));
+  };
+
+  const saveCustomerContact = async (event) => {
+    event.preventDefault();
+    const errors = {};
+    if (!`${customerContactForm.name || ''}`.trim()) errors.name = 'Contact name is required.';
+    if (!`${customerContactForm.company || ''}`.trim()) errors.company = 'Company name is required.';
+    if (Object.keys(errors).length) {
+      setCustomerContactErrors(errors);
+      return;
+    }
+
+    const payload = [
+      'customer',
+      customerContactForm.name.trim(),
+      customerContactForm.company.trim(),
+      customerContactForm.email.trim(),
+      customerContactForm.phone.trim(),
+      customerContactForm.address.trim(),
+      customerContactForm.city.trim(),
+      customerContactForm.state.trim(),
+      customerContactForm.gst_number.trim(),
+      customerContactForm.pan_number.trim(),
+      Number(customerContactForm.credit_limit || 0),
+      customerContactForm.account_holder_name.trim(),
+      customerContactForm.bank_name.trim(),
+      customerContactForm.branch_name.trim(),
+      customerContactForm.account_number.trim(),
+      customerContactForm.account_type || 'current',
+      customerContactForm.ifsc_code.trim(),
+      customerContactForm.swift_code.trim(),
+      customerContactForm.iban.trim(),
+      customerContactForm.upi_id.trim(),
+      customerContactForm.preferred_payment_method || 'bank_transfer',
+      Number(customerContactForm.payment_terms_days || 0),
+      customerContactForm.bank_address.trim(),
+      customerContactForm.notes.trim()
+    ];
+
+    try {
+      const contactId = editingCustomerId || generateId();
+      if (editingCustomerId) {
+        await db.run(
+          `UPDATE contacts
+           SET type=?,name=?,company=?,email=?,phone=?,address=?,city=?,state=?,gst_number=?,pan_number=?,credit_limit=?,
+               account_holder_name=?,bank_name=?,branch_name=?,account_number=?,account_type=?,ifsc_code=?,swift_code=?,
+               iban=?,upi_id=?,preferred_payment_method=?,payment_terms_days=?,bank_address=?,notes=?
+           WHERE id=?`,
+          [...payload, contactId]
+        );
+      } else {
+        await db.run(
+          `INSERT INTO contacts (
+            id,type,name,company,email,phone,address,city,state,gst_number,pan_number,credit_limit,
+            account_holder_name,bank_name,branch_name,account_number,account_type,ifsc_code,swift_code,
+            iban,upi_id,preferred_payment_method,payment_terms_days,bank_address,notes
+          ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          [contactId, ...payload]
+        );
+      }
+
+      const savedCustomer = await db.get(
+        `SELECT id, name, company, email, phone, gst_number, state, credit_limit, account_holder_name,
+                bank_name, branch_name, account_number, account_type, ifsc_code, swift_code, iban, upi_id,
+                preferred_payment_method, payment_terms_days, address, city, pan_number, bank_address, notes
+         FROM contacts
+         WHERE id = ?`,
+        [contactId]
+      );
+
+      setCustomers((prev) => {
+        const next = prev.some((entry) => entry.id === contactId)
+          ? prev.map((entry) => (entry.id === contactId ? savedCustomer : entry))
+          : [...prev, savedCustomer];
+        return next.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
       });
+      applyCustomerToSalesForm(savedCustomer);
+      setCustomerSearchModal(false);
+      setCustomerSearch('');
+      closeCustomerContactEditor();
+      flash('success', `${savedCustomer.company || savedCustomer.name} saved and selected.`);
+    } catch (err) {
+      flash('error', err.message);
+    }
+  };
+
+  const openVendorContactEditor = (vendor = null) => {
+    setEditingVendorId(vendor?.id || null);
+    setVendorContactForm({ ...newVendorContactForm(), ...(vendor || {}), type: 'vendor' });
+    setVendorContactErrors({});
+    setVendorEditorOpen(true);
+  };
+
+  const closeVendorContactEditor = () => {
+    setVendorEditorOpen(false);
+    setEditingVendorId(null);
+    setVendorContactForm(newVendorContactForm());
+    setVendorContactErrors({});
+  };
+
+  const updateVendorContactField = (field, value) => {
+    setVendorContactForm((prev) => ({ ...prev, [field]: value }));
+    setVendorContactErrors((prev) => ({ ...prev, [field]: '' }));
+  };
+
+  const saveVendorContact = async (event) => {
+    event.preventDefault();
+    const errors = {};
+    if (!`${vendorContactForm.name || ''}`.trim()) errors.name = 'Contact name is required.';
+    if (!`${vendorContactForm.company || ''}`.trim()) errors.company = 'Company name is required.';
+    if (Object.keys(errors).length) {
+      setVendorContactErrors(errors);
+      return;
+    }
+
+    const payload = [
+      'vendor',
+      vendorContactForm.name.trim(),
+      vendorContactForm.company.trim(),
+      vendorContactForm.email.trim(),
+      vendorContactForm.phone.trim(),
+      vendorContactForm.address.trim(),
+      vendorContactForm.city.trim(),
+      vendorContactForm.state.trim(),
+      vendorContactForm.gst_number.trim(),
+      vendorContactForm.pan_number.trim(),
+      Number(vendorContactForm.credit_limit || 0),
+      vendorContactForm.account_holder_name.trim(),
+      vendorContactForm.bank_name.trim(),
+      vendorContactForm.branch_name.trim(),
+      vendorContactForm.account_number.trim(),
+      vendorContactForm.account_type || 'current',
+      vendorContactForm.ifsc_code.trim(),
+      vendorContactForm.swift_code.trim(),
+      vendorContactForm.iban.trim(),
+      vendorContactForm.upi_id.trim(),
+      vendorContactForm.preferred_payment_method || 'bank_transfer',
+      Number(vendorContactForm.payment_terms_days || 0),
+      vendorContactForm.bank_address.trim(),
+      vendorContactForm.notes.trim()
+    ];
+
+    try {
+      const contactId = editingVendorId || generateId();
+      if (editingVendorId) {
+        await db.run(
+          `UPDATE contacts
+           SET type=?,name=?,company=?,email=?,phone=?,address=?,city=?,state=?,gst_number=?,pan_number=?,credit_limit=?,
+               account_holder_name=?,bank_name=?,branch_name=?,account_number=?,account_type=?,ifsc_code=?,swift_code=?,
+               iban=?,upi_id=?,preferred_payment_method=?,payment_terms_days=?,bank_address=?,notes=?
+           WHERE id=?`,
+          [...payload, contactId]
+        );
+      } else {
+        await db.run(
+          `INSERT INTO contacts (
+            id,type,name,company,email,phone,address,city,state,gst_number,pan_number,credit_limit,
+            account_holder_name,bank_name,branch_name,account_number,account_type,ifsc_code,swift_code,
+            iban,upi_id,preferred_payment_method,payment_terms_days,bank_address,notes
+          ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          [contactId, ...payload]
+        );
+      }
+
+      const savedVendor = await db.get(
+        `SELECT id, name, company, email, phone, gst_number, state, credit_limit, account_holder_name,
+                bank_name, branch_name, account_number, account_type, ifsc_code, swift_code, iban, upi_id,
+                preferred_payment_method, payment_terms_days, address, city, pan_number, bank_address, notes
+         FROM contacts
+         WHERE id = ?`,
+        [contactId]
+      );
+
+      setVendors((prev) => {
+        const next = prev.some((entry) => entry.id === contactId)
+          ? prev.map((entry) => (entry.id === contactId ? savedVendor : entry))
+          : [...prev, savedVendor];
+        return next.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      });
+      applyVendorToPurchaseForm(savedVendor);
+      setVendorSearchModal(false);
+      setVendorSearch('');
+      closeVendorContactEditor();
+      flash('success', `${savedVendor.company || savedVendor.name} saved and selected.`);
+    } catch (err) {
+      flash('error', err.message);
     }
   };
 
@@ -542,7 +809,9 @@ export default function Accounting() {
     if (!salesForm.customer_name || !salesPreview.items.some((item) => item.product_name)) return flash('error', 'Customer and invoice lines are required.');
     const invoiceId = generateId();
     const invoiceNumber = `${accountingSettings.sales_invoice_prefix || 'INV'}-${Date.now()}`;
-    await accountingDb.run('INSERT INTO sales_invoices (id,invoice_number,customer_id,customer_name,customer_gst,source_order_id,source_module,invoice_date,due_date,status,place_of_supply,supply_type,subtotal_amount,discount_amount,taxable_amount,cgst_amount,sgst_amount,igst_amount,total_tax,total_amount,outstanding_amount,notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [invoiceId, invoiceNumber, salesForm.customer_id, salesForm.customer_name, salesForm.customer_gst, salesForm.source_order_id || null, salesForm.source_order_id ? 'orders' : 'sales', salesForm.invoice_date, salesForm.due_date, 'open', salesForm.place_of_supply, salesForm.supply_type, salesPreview.taxable, 0, salesPreview.taxable, salesPreview.cgst, salesPreview.sgst, salesPreview.igst, salesPreview.totalTax, salesPreview.total, salesPreview.total, salesForm.notes]);
+    const sourceId = salesForm.source_proforma_id || salesForm.source_order_id || null;
+    const sourceModule = salesForm.source_proforma_id ? 'proforma' : salesForm.source_order_id ? 'orders' : 'sales';
+    await accountingDb.run('INSERT INTO sales_invoices (id,invoice_number,customer_id,customer_name,customer_gst,source_order_id,source_module,invoice_date,due_date,status,place_of_supply,supply_type,subtotal_amount,discount_amount,taxable_amount,cgst_amount,sgst_amount,igst_amount,total_tax,total_amount,outstanding_amount,notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [invoiceId, invoiceNumber, salesForm.customer_id, salesForm.customer_name, salesForm.customer_gst, sourceId, sourceModule, salesForm.invoice_date, salesForm.due_date, 'open', salesForm.place_of_supply, salesForm.supply_type, salesPreview.taxable, 0, salesPreview.taxable, salesPreview.cgst, salesPreview.sgst, salesPreview.igst, salesPreview.totalTax, salesPreview.total, salesPreview.total, salesForm.notes]);
     for (let i = 0; i < salesPreview.items.length; i += 1) {
       const item = salesPreview.items[i];
       if (!item.product_name) continue;
@@ -554,7 +823,7 @@ export default function Accounting() {
     if (salesPreview.igst) lines.push({ ...accountByCode('2120', 'Output IGST'), debit_amount: 0, credit_amount: salesPreview.igst });
     await postJournal('sales-invoice', 'sales_invoice', invoiceId, `Auto sales invoice ${invoiceNumber}`, lines, true);
     await addNotification?.('success', 'Sales invoice posted', invoiceNumber, invoiceId, 'sales_invoice');
-    setSalesForm({ ...salesForm, customer_id: '', customer_name: '', customer_gst: '', source_order_id: '', notes: '', items: [newLine()] });
+    setSalesForm({ ...salesForm, customer_id: '', customer_name: '', customer_gst: '', source_order_id: '', source_proforma_id: '', source_proforma_number: '', notes: '', items: [newLine()] });
     flash('success', `${invoiceNumber} created.`);
     loadAll();
   };
@@ -1485,10 +1754,10 @@ export default function Accounting() {
         issue_date: today(),
         valid_till: shiftDate(today(), 7),
         status: 'draft',
-        subject: '',
-        mail_draft: 'Dear Sir/Madam,\n\nPlease find attached our proforma invoice for your review. Kindly confirm the commercials and revert with your approval.\n\nThanks & Regards,',
+        subject: proformaDefaults.subject,
+        mail_draft: proformaDefaults.mailDraft,
         notes: '',
-        terms: 'This is a proforma invoice and not a tax invoice. Material dispatch and final tax invoice will follow confirmation and payment terms.',
+        terms: proformaDefaults.terms,
         items: [newProformaLine()]
       });
       setEditingProformaId(null);
@@ -1522,13 +1791,137 @@ export default function Accounting() {
           ? {
               ...item,
               product_id: productId,
-              description: product?.name || item.description,
+              description: product?.description || product?.name || item.description,
               unit_price: Number(product?.selling_price || item.unit_price || 0),
               tax_rate: Number(product?.gst_rate || item.tax_rate || 18)
             }
           : item
       )
     }));
+  };
+
+  const convertProformaToSalesInvoice = async (record) => {
+    if (!record?.id) return;
+
+    try {
+      const [itemRows, customer] = await Promise.all([
+        db.all(
+          `SELECT pii.*, p.name as product_name, p.hsn_code, p.unit, p.gst_rate
+           FROM proforma_invoice_items pii
+           LEFT JOIN products p ON p.id = pii.product_id
+           WHERE pii.proforma_invoice_id = ?
+           ORDER BY pii.sort_order, pii.rowid`,
+          [record.id]
+        ),
+        record.customer_id ? db.get('SELECT * FROM contacts WHERE id = ?', [record.customer_id]) : Promise.resolve(null)
+      ]);
+
+      if (!customer) return flash('error', 'Customer is missing for this proforma invoice.');
+      if (!itemRows.length) return flash('error', 'No line items found in this proforma invoice.');
+
+      const supplyType = customer.state && customer.state !== companyState ? 'inter-state' : 'intra-state';
+      const paymentTermsDays = Number(customer.payment_terms_days || 0);
+      const invoiceDate = today();
+      const convertedItems = itemRows.map((item) => ({
+        product_id: item.product_id || '',
+        product_name: item.product_name || item.description || 'Proforma item',
+        hsn_sac: item.hsn_code || '',
+        quantity: Number(item.quantity || 1),
+        unit: item.unit || 'PCS',
+        rate: Number(item.unit_price || 0),
+        gst_rate: Number(item.tax_rate ?? item.gst_rate ?? 18)
+      }));
+
+      setSalesForm({
+        customer_id: customer.id,
+        customer_name: customer.company || customer.name,
+        customer_gst: customer.gst_number || '',
+        source_order_id: '',
+        source_proforma_id: record.id,
+        source_proforma_number: record.proforma_number,
+        invoice_date: invoiceDate,
+        due_date: shiftDate(invoiceDate, paymentTermsDays),
+        place_of_supply: customer.state || companyState,
+        supply_type: supplyType,
+        notes: `Converted from proforma invoice ${record.proforma_number || ''}`.trim(),
+        items: convertedItems.length ? convertedItems : [newLine()]
+      });
+      setActiveTab('billing');
+      flash('success', `${record.proforma_number} loaded into Sales Invoice.`);
+    } catch (err) {
+      flash('error', err.message);
+    }
+  };
+
+  const openQuickProductEditor = (lineId) => {
+    const line = proformaForm.items.find((item) => item.id === lineId);
+    setQuickProductLineId(lineId);
+    setQuickProductForm({ ...newQuickProductForm(), name: line?.description || '', description: line?.description || '', selling_price: Number(line?.unit_price || 0), gst_rate: Number(line?.tax_rate || 18) });
+    setQuickProductModalOpen(true);
+  };
+
+  const closeQuickProductEditor = () => {
+    setQuickProductModalOpen(false);
+    setQuickProductLineId(null);
+    setQuickProductForm(newQuickProductForm());
+  };
+
+  const saveQuickProduct = async () => {
+    const name = quickProductForm.name.trim();
+    const code = quickProductForm.code.trim();
+    if (!name) return flash('error', 'Product name is required.');
+
+    try {
+      const id = generateId();
+      const createdProduct = {
+        id,
+        name,
+        code,
+        description: quickProductForm.description.trim(),
+        unit: quickProductForm.unit || 'PCS',
+        hsn_code: quickProductForm.hsn_code.trim(),
+        gst_rate: Number(quickProductForm.gst_rate || 0),
+        selling_price: Number(quickProductForm.selling_price || 0),
+        cost_price: Number(quickProductForm.cost_price || 0)
+      };
+
+      await db.run(
+        `INSERT INTO products (id,name,code,description,unit,hsn_code,gst_rate,selling_price,cost_price)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+        [
+          createdProduct.id,
+          createdProduct.name,
+          createdProduct.code || null,
+          createdProduct.description,
+          createdProduct.unit,
+          createdProduct.hsn_code,
+          createdProduct.gst_rate,
+          createdProduct.selling_price,
+          createdProduct.cost_price
+        ]
+      );
+      await db.run('INSERT INTO inventory (id, product_id, quantity) VALUES (?,?,0)', [generateId(), id]);
+
+      setProducts((prev) => [...prev, createdProduct].sort((a, b) => a.name.localeCompare(b.name)));
+      setProformaForm((prev) => ({
+        ...prev,
+        items: prev.items.map((item) =>
+          item.id === quickProductLineId
+            ? {
+                ...item,
+                product_id: createdProduct.id,
+                description: createdProduct.description || createdProduct.name,
+                unit_price: createdProduct.selling_price,
+                tax_rate: createdProduct.gst_rate || item.tax_rate || 18
+              }
+            : item
+        )
+      }));
+      flash('success', `${createdProduct.name} added and selected.`);
+      closeQuickProductEditor();
+    } catch (err) {
+      flash('error', err.message);
+    }
   };
 
   const addProformaItem = () => {
@@ -1841,46 +2234,297 @@ export default function Accounting() {
             <div className="card">
               <div className="card-header"><h4>Create Sales Invoice</h4></div>
               <form className="card-body" onSubmit={createSalesInvoice} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div className="grid-2">
-                  <select className="form-control" value={salesForm.customer_id} onChange={(e) => setParty('customer', e.target.value)}>
-                    <option value="">Select customer</option>
-                    {customers.map((row) => <option key={row.id} value={row.id}>{row.company || row.name}</option>)}
-                  </select>
-                  <select className="form-control" value={salesForm.source_order_id} onChange={(e) => setSalesForm({ ...salesForm, source_order_id: e.target.value })}>
-                    <option value="">Standalone invoice</option>
-                    {orders.map((row) => <option key={row.id} value={row.id}>{row.order_number}</option>)}
-                  </select>
-                </div>
+                
+                {/* Customer Selection - Enhanced UI */}
+                {salesForm.customer_id ? (
+                  <div style={{ padding: '12px 14px', borderRadius: 12, background: 'linear-gradient(135deg, rgba(34,197,94,0.1), rgba(34,197,94,0.05))', border: '1px solid rgba(34,197,94,0.2)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: 8 }}>
+                      <div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Customer Selected</div>
+                        <div style={{ fontSize: 15, fontWeight: 700, marginTop: 4, color: 'var(--text)' }}>{selectedCustomer?.company || selectedCustomer?.name}</div>
+                        {selectedCustomer?.gst_number && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>GST: {selectedCustomer.gst_number}</div>}
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => openCustomerContactEditor(selectedCustomer)}><Edit2 size={13} />Edit</button>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setCustomerSearchModal(true)}>Change</button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <button type="button" className="btn btn-outline" onClick={() => setCustomerSearchModal(true)} style={{ padding: '12px 16px', justifyContent: 'center', background: 'var(--bg-secondary)', border: '2px dashed var(--border)' }}>
+                    <User size={16} style={{ marginRight: 8 }} />
+                    <span>Select Customer</span>
+                  </button>
+                )}
+
+                {/* Customer Search Modal */}
+                {customerSearchModal && (
+                  <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setCustomerSearchModal(false)}>
+                    <div className="modal modal-lg" style={{ maxWidth: '600px' }}>
+                      <div className="modal-header">
+                        <div>
+                          <h3>Select Customer</h3>
+                          <div className="text-secondary text-sm" style={{ marginTop: 4 }}>Choose an existing customer or maintain the contact master without leaving Billing.</div>
+                        </div>
+                        <button type="button" className="btn btn-primary btn-sm" onClick={() => openCustomerContactEditor()}><Plus size={13} />Add New Customer</button>
+                        <button className="close-btn" onClick={() => { setCustomerSearchModal(false); setCustomerSearch(''); }}><X size={16} /></button>
+                      </div>
+                      <div className="modal-body" style={{ maxHeight: '500px', overflowY: 'auto' }}>
+                        <div className="form-group" style={{ marginBottom: 12 }}>
+                          <input 
+                            className="form-control" 
+                            placeholder="Search by name, company, phone, or email..."
+                            value={customerSearch}
+                            onChange={(e) => setCustomerSearch(e.target.value.toLowerCase())}
+                            autoFocus
+                          />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {customers.filter((c) => !customerSearch || c.name?.toLowerCase().includes(customerSearch) || c.company?.toLowerCase().includes(customerSearch) || c.phone?.includes(customerSearch) || c.email?.toLowerCase().includes(customerSearch)).map((c) => (
+                            <div
+                              key={c.id}
+                              style={{
+                                padding: '12px 14px',
+                                borderRadius: 10,
+                                background: 'var(--bg-secondary)',
+                                border: '1px solid var(--border)',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                textAlign: 'left'
+                              }}
+                              onMouseOver={(e) => e.currentTarget.style.background = 'var(--bg-hover)'}
+                              onMouseOut={(e) => e.currentTarget.style.background = 'var(--bg-secondary)'}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{c.company || c.name}</div>
+                                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                                    {c.phone && <span><Phone size={12} style={{ display: 'inline', marginRight: 4 }} />{c.phone}</span>}
+                                    {c.email && <span>{c.email}</span>}
+                                  </div>
+                                  <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 4 }}>Credit Limit: {formatCurrency(c.credit_limit || 0, currencySymbol)}</div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => openCustomerContactEditor(c)}
+                                  >
+                                    <Edit2 size={13} />Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn-primary btn-sm"
+                                    onClick={() => {
+                                      setParty('customer', c.id);
+                                      setCustomerSearchModal(false);
+                                      setCustomerSearch('');
+                                    }}
+                                  >
+                                    Select
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {customerEditorOpen && (
+                  <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeCustomerContactEditor()}>
+                    <div className="modal modal-xl">
+                      <div className="modal-header">
+                        <div>
+                          <h3>{editingCustomerId ? 'Edit Customer Contact' : 'Add New Customer'}</h3>
+                          <div className="text-secondary text-sm" style={{ marginTop: 4 }}>Customer master details used by Billing, Accounting, and settlement workflows.</div>
+                        </div>
+                        <button className="close-btn" onClick={closeCustomerContactEditor}><X size={16} /></button>
+                      </div>
+                      <form onSubmit={saveCustomerContact}>
+                        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                          <div className="catalogue-form-section">
+                            <div className="catalogue-form-section-header">
+                              <h4>Customer Identity</h4>
+                              <span>Maintain the legal and billing contact details used on invoices.</span>
+                            </div>
+                            <div className="grid-2">
+                              <div className="form-group">
+                                <label className="form-label">Contact Name *</label>
+                                <input className="form-control" value={customerContactForm.name} onChange={(e) => updateCustomerContactField('name', e.target.value)} autoFocus />
+                                {customerContactErrors.name && <span className="text-xs" style={{ color: 'var(--danger)' }}>{customerContactErrors.name}</span>}
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">Company Name *</label>
+                                <input className="form-control" value={customerContactForm.company} onChange={(e) => updateCustomerContactField('company', e.target.value)} />
+                                {customerContactErrors.company && <span className="text-xs" style={{ color: 'var(--danger)' }}>{customerContactErrors.company}</span>}
+                              </div>
+                            </div>
+                            <div className="grid-2">
+                              <div className="form-group">
+                                <label className="form-label">Phone</label>
+                                <input className="form-control" value={customerContactForm.phone} onChange={(e) => updateCustomerContactField('phone', e.target.value)} />
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">Email</label>
+                                <input className="form-control" type="email" value={customerContactForm.email} onChange={(e) => updateCustomerContactField('email', e.target.value)} />
+                              </div>
+                            </div>
+                            <div className="form-group">
+                              <label className="form-label">Address</label>
+                              <textarea className="form-control" rows={3} value={customerContactForm.address} onChange={(e) => updateCustomerContactField('address', e.target.value)} />
+                            </div>
+                            <div className="grid-3">
+                              <div className="form-group">
+                                <label className="form-label">City</label>
+                                <input className="form-control" value={customerContactForm.city} onChange={(e) => updateCustomerContactField('city', e.target.value)} />
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">State</label>
+                                <input className="form-control" value={customerContactForm.state} onChange={(e) => updateCustomerContactField('state', e.target.value)} placeholder={companyState} />
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">Payment Terms Days</label>
+                                <input className="form-control" type="number" min="0" value={customerContactForm.payment_terms_days} onChange={(e) => updateCustomerContactField('payment_terms_days', e.target.value)} />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="catalogue-form-section">
+                            <div className="catalogue-form-section-header">
+                              <h4>Compliance & Credit</h4>
+                              <span>These values flow into GST-aware billing and receivable control.</span>
+                            </div>
+                            <div className="grid-3">
+                              <div className="form-group">
+                                <label className="form-label">GST Number</label>
+                                <input className="form-control" value={customerContactForm.gst_number} onChange={(e) => updateCustomerContactField('gst_number', e.target.value.toUpperCase())} />
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">PAN Number</label>
+                                <input className="form-control" value={customerContactForm.pan_number} onChange={(e) => updateCustomerContactField('pan_number', e.target.value.toUpperCase())} />
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">Credit Limit</label>
+                                <input className="form-control" type="number" min="0" step="0.01" value={customerContactForm.credit_limit} onChange={(e) => updateCustomerContactField('credit_limit', e.target.value)} />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="catalogue-form-section">
+                            <div className="catalogue-form-section-header">
+                              <h4>Bank & Settlement</h4>
+                              <span>Optional payment details for receipts and customer settlement follow-up.</span>
+                            </div>
+                            <div className="grid-2">
+                              <div className="form-group">
+                                <label className="form-label">Account Holder</label>
+                                <input className="form-control" value={customerContactForm.account_holder_name} onChange={(e) => updateCustomerContactField('account_holder_name', e.target.value)} />
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">Bank Name</label>
+                                <input className="form-control" value={customerContactForm.bank_name} onChange={(e) => updateCustomerContactField('bank_name', e.target.value)} />
+                              </div>
+                            </div>
+                            <div className="grid-3">
+                              <div className="form-group">
+                                <label className="form-label">Account Number</label>
+                                <input className="form-control" value={customerContactForm.account_number} onChange={(e) => updateCustomerContactField('account_number', e.target.value)} />
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">IFSC</label>
+                                <input className="form-control" value={customerContactForm.ifsc_code} onChange={(e) => updateCustomerContactField('ifsc_code', e.target.value.toUpperCase())} />
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">UPI ID</label>
+                                <input className="form-control" value={customerContactForm.upi_id} onChange={(e) => updateCustomerContactField('upi_id', e.target.value)} />
+                              </div>
+                            </div>
+                            <div className="form-group">
+                              <label className="form-label">Internal Notes</label>
+                              <textarea className="form-control" rows={2} value={customerContactForm.notes} onChange={(e) => updateCustomerContactField('notes', e.target.value)} />
+                            </div>
+                          </div>
+                        </div>
+                        <div className="modal-footer">
+                          <button type="button" className="btn btn-secondary" onClick={closeCustomerContactEditor}>Cancel</button>
+                          <button type="submit" className="btn btn-primary"><Save size={14} />Save & Select</button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
+
                 {selectedCustomer && renderPartySettlementPanel(selectedCustomer, 'customer')}
+                {salesForm.source_proforma_id && (
+                  <div style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--accent-dim)', border: '1px solid var(--accent)', color: 'var(--text-primary)', fontSize: 13 }}>
+                    <strong>Source:</strong> Proforma invoice {salesForm.source_proforma_number}
+                  </div>
+                )}
                 <div className="grid-2">
                   <input className="form-control" type="date" value={salesForm.invoice_date} onChange={(e) => setSalesForm({ ...salesForm, invoice_date: e.target.value })} />
                   <input className="form-control" type="date" value={salesForm.due_date} onChange={(e) => setSalesForm({ ...salesForm, due_date: e.target.value })} />
                 </div>
                 <div className="grid-2">
-                  <input className="form-control" value={salesForm.place_of_supply} onChange={(e) => setSalesForm({ ...salesForm, place_of_supply: e.target.value })} placeholder="Place of supply" />
+                  <select className="form-control" value={salesForm.source_order_id} onChange={(e) => setSalesForm({ ...salesForm, source_order_id: e.target.value, source_proforma_id: '', source_proforma_number: '' })}>
+                    <option value="">Standalone invoice</option>
+                    {orders.map((row) => <option key={row.id} value={row.id}>{row.order_number}</option>)}
+                  </select>
                   <select className="form-control" value={salesForm.supply_type} onChange={(e) => setSalesForm({ ...salesForm, supply_type: e.target.value })}>
                     <option value="intra-state">Intra-state</option>
                     <option value="inter-state">Inter-state</option>
                   </select>
                 </div>
-                {salesForm.items.map((item, index) => (
-                  <div key={`sales-${index}`} className="grid-4">
-                    <select className="form-control" value={item.product_id} onChange={(e) => setProductLine(salesForm, setSalesForm, index, e.target.value)}>
-                      <option value="">Product</option>
-                      {products.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
-                    </select>
-                    <input className="form-control" type="number" min="0" step="0.01" value={item.quantity} onChange={(e) => { const items = [...salesForm.items]; items[index] = { ...items[index], quantity: e.target.value }; setSalesForm({ ...salesForm, items }); }} />
-                    <input className="form-control" type="number" min="0" step="0.01" value={item.rate} onChange={(e) => { const items = [...salesForm.items]; items[index] = { ...items[index], rate: e.target.value }; setSalesForm({ ...salesForm, items }); }} />
-                    <div className="bom-static-field">{formatCurrency(salesPreview.items[index]?.line_total || 0, currencySymbol)}</div>
-                  </div>
-                ))}
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSalesForm({ ...salesForm, items: [...salesForm.items, newLine()] })}><Plus size={13} />Add Line</button>
-                  <button type="submit" className="btn btn-primary"><Save size={14} />Post Invoice</button>
+
+                {/* Product Lines */}
+                <div style={{ paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 10, textTransform: 'uppercase' }}>Line Items</div>
+                  {salesForm.items.map((item, index) => (
+                    <div key={`sales-${index}`} style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--bg-secondary)', marginBottom: 8, border: '1px solid var(--border)' }}>
+                      <div className="grid-4" style={{ gap: 8 }}>
+                        <input 
+                          className="form-control" 
+                          value={item.product_name}
+                          placeholder="Product / Service"
+                          style={{ fontSize: 13 }}
+                          readOnly
+                        />
+                        <input className="form-control" type="number" min="0" step="0.01" value={item.quantity} onChange={(e) => { const items = [...salesForm.items]; items[index] = { ...items[index], quantity: e.target.value }; setSalesForm({ ...salesForm, items }); }} placeholder="Qty" style={{ fontSize: 13 }} />
+                        <input className="form-control" type="number" min="0" step="0.01" value={item.rate} onChange={(e) => { const items = [...salesForm.items]; items[index] = { ...items[index], rate: e.target.value }; setSalesForm({ ...salesForm, items }); }} placeholder="Rate" style={{ fontSize: 13 }} />
+                        <div style={{ padding: '8px 12px', borderRadius: 6, background: 'var(--bg-primary)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          {formatCurrency(salesPreview.items[index]?.line_total || 0, currencySymbol)}
+                          <button type="button" onClick={() => { const items = salesForm.items.filter((_, i) => i !== index); setSalesForm({ ...salesForm, items: items.length === 0 ? [newLine()] : items }); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--text-muted)' }}><Trash size={14} /></button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="catalogue-summary-card">
-                  <span className="catalogue-summary-title">Invoice total</span>
-                  <strong>{formatCurrency(salesPreview.total, currencySymbol)}</strong>
+
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" className="btn btn-outline" onClick={() => setSalesForm({ ...salesForm, items: [...salesForm.items, newLine()] })} style={{ flex: 1, justifyContent: 'center' }}>
+                    <Plus size={16} style={{ marginRight: 6 }} />
+                    Add Product
+                  </button>
+                </div>
+
+                <div style={{ paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                  <div className="grid-2">
+                    <input className="form-control" value={salesForm.place_of_supply} onChange={(e) => setSalesForm({ ...salesForm, place_of_supply: e.target.value })} placeholder="Place of supply" />
+                  </div>
+                </div>
+
+                <textarea className="form-control" value={salesForm.notes} onChange={(e) => setSalesForm({ ...salesForm, notes: e.target.value })} placeholder="Invoice notes" rows={2} style={{ fontSize: 13 }} />
+
+                <div style={{ padding: '12px 14px', borderRadius: 10, background: 'linear-gradient(135deg, rgba(99,102,241,0.1), rgba(99,102,241,0.05))', border: '1px solid rgba(99,102,241,0.2)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Invoice Total</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, marginTop: 4, color: 'var(--text)' }}>{formatCurrency(salesPreview.total, currencySymbol)}</div>
+                    </div>
+                    <button type="submit" className="btn btn-primary"><Save size={14} />Post Invoice</button>
+                  </div>
                 </div>
               </form>
             </div>
@@ -1888,50 +2532,297 @@ export default function Accounting() {
             <div className="card">
               <div className="card-header"><h4>Create Purchase Bill</h4></div>
               <form className="card-body" onSubmit={createPurchaseBill} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div className="grid-2">
-                  <select className="form-control" value={purchaseForm.vendor_id} onChange={(e) => setParty('vendor', e.target.value)}>
-                    <option value="">Select vendor</option>
-                    {vendors.map((row) => <option key={row.id} value={row.id}>{row.company || row.name}</option>)}
-                  </select>
-                  <select className="form-control" value={purchaseForm.source_grn_id} onChange={(e) => setPurchaseForm({ ...purchaseForm, source_grn_id: e.target.value })}>
-                    <option value="">Standalone bill</option>
-                    {grns.map((row) => <option key={row.id} value={row.id}>{row.grn_number}</option>)}
-                  </select>
-                </div>
+                
+                {/* Vendor Selection - Enhanced UI */}
+                {purchaseForm.vendor_id ? (
+                  <div style={{ padding: '12px 14px', borderRadius: 12, background: 'linear-gradient(135deg, rgba(249,115,22,0.1), rgba(249,115,22,0.05))', border: '1px solid rgba(249,115,22,0.2)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: 8 }}>
+                      <div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Vendor Selected</div>
+                        <div style={{ fontSize: 15, fontWeight: 700, marginTop: 4, color: 'var(--text)' }}>{selectedVendor?.company || selectedVendor?.name}</div>
+                        {selectedVendor?.gst_number && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>GST: {selectedVendor.gst_number}</div>}
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => openVendorContactEditor(selectedVendor)}><Edit2 size={13} />Edit</button>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setVendorSearchModal(true)}>Change</button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <button type="button" className="btn btn-outline" onClick={() => setVendorSearchModal(true)} style={{ padding: '12px 16px', justifyContent: 'center', background: 'var(--bg-secondary)', border: '2px dashed var(--border)' }}>
+                    <Building2 size={16} style={{ marginRight: 8 }} />
+                    <span>Select Vendor</span>
+                  </button>
+                )}
+
+                {/* Vendor Search Modal */}
+                {vendorSearchModal && (
+                  <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setVendorSearchModal(false)}>
+                    <div className="modal modal-lg" style={{ maxWidth: '600px' }}>
+                      <div className="modal-header">
+                        <div>
+                          <h3>Select Vendor</h3>
+                          <div className="text-secondary text-sm" style={{ marginTop: 4 }}>Choose an existing vendor or maintain the contact master without leaving Billing.</div>
+                        </div>
+                        <button type="button" className="btn btn-primary btn-sm" onClick={() => openVendorContactEditor()}><Plus size={13} />Add New Vendor</button>
+                        <button className="close-btn" onClick={() => { setVendorSearchModal(false); setVendorSearch(''); }}><X size={16} /></button>
+                      </div>
+                      <div className="modal-body" style={{ maxHeight: '500px', overflowY: 'auto' }}>
+                        <div className="form-group" style={{ marginBottom: 12 }}>
+                          <input 
+                            className="form-control" 
+                            placeholder="Search by name, company, phone, or email..."
+                            value={vendorSearch}
+                            onChange={(e) => setVendorSearch(e.target.value.toLowerCase())}
+                            autoFocus
+                          />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {vendors.filter((v) => !vendorSearch || v.name?.toLowerCase().includes(vendorSearch) || v.company?.toLowerCase().includes(vendorSearch) || v.phone?.includes(vendorSearch) || v.email?.toLowerCase().includes(vendorSearch)).map((v) => (
+                            <div
+                              key={v.id}
+                              style={{
+                                padding: '12px 14px',
+                                borderRadius: 10,
+                                background: 'var(--bg-secondary)',
+                                border: '1px solid var(--border)',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                textAlign: 'left'
+                              }}
+                              onMouseOver={(e) => e.currentTarget.style.background = 'var(--bg-hover)'}
+                              onMouseOut={(e) => e.currentTarget.style.background = 'var(--bg-secondary)'}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{v.company || v.name}</div>
+                                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                                    {v.phone && <span><Phone size={12} style={{ display: 'inline', marginRight: 4 }} />{v.phone}</span>}
+                                    {v.email && <span>{v.email}</span>}
+                                  </div>
+                                  <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 4 }}>Payment Terms: {v.payment_terms_days} days</div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => openVendorContactEditor(v)}
+                                  >
+                                    <Edit2 size={13} />Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn-primary btn-sm"
+                                    onClick={() => {
+                                      setParty('vendor', v.id);
+                                      setVendorSearchModal(false);
+                                      setVendorSearch('');
+                                    }}
+                                  >
+                                    Select
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {vendorEditorOpen && (
+                  <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeVendorContactEditor()}>
+                    <div className="modal modal-xl">
+                      <div className="modal-header">
+                        <div>
+                          <h3>{editingVendorId ? 'Edit Vendor Contact' : 'Add New Vendor'}</h3>
+                          <div className="text-secondary text-sm" style={{ marginTop: 4 }}>Vendor master details used by Purchase Billing, Accounting, and settlement workflows.</div>
+                        </div>
+                        <button className="close-btn" onClick={closeVendorContactEditor}><X size={16} /></button>
+                      </div>
+                      <form onSubmit={saveVendorContact}>
+                        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                          <div className="catalogue-form-section">
+                            <div className="catalogue-form-section-header">
+                              <h4>Vendor Identity</h4>
+                              <span>Maintain the legal and payable contact details used on purchase bills.</span>
+                            </div>
+                            <div className="grid-2">
+                              <div className="form-group">
+                                <label className="form-label">Contact Name *</label>
+                                <input className="form-control" value={vendorContactForm.name} onChange={(e) => updateVendorContactField('name', e.target.value)} autoFocus />
+                                {vendorContactErrors.name && <span className="text-xs" style={{ color: 'var(--danger)' }}>{vendorContactErrors.name}</span>}
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">Company Name *</label>
+                                <input className="form-control" value={vendorContactForm.company} onChange={(e) => updateVendorContactField('company', e.target.value)} />
+                                {vendorContactErrors.company && <span className="text-xs" style={{ color: 'var(--danger)' }}>{vendorContactErrors.company}</span>}
+                              </div>
+                            </div>
+                            <div className="grid-2">
+                              <div className="form-group">
+                                <label className="form-label">Phone</label>
+                                <input className="form-control" value={vendorContactForm.phone} onChange={(e) => updateVendorContactField('phone', e.target.value)} />
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">Email</label>
+                                <input className="form-control" type="email" value={vendorContactForm.email} onChange={(e) => updateVendorContactField('email', e.target.value)} />
+                              </div>
+                            </div>
+                            <div className="form-group">
+                              <label className="form-label">Address</label>
+                              <textarea className="form-control" rows={3} value={vendorContactForm.address} onChange={(e) => updateVendorContactField('address', e.target.value)} />
+                            </div>
+                            <div className="grid-3">
+                              <div className="form-group">
+                                <label className="form-label">City</label>
+                                <input className="form-control" value={vendorContactForm.city} onChange={(e) => updateVendorContactField('city', e.target.value)} />
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">State</label>
+                                <input className="form-control" value={vendorContactForm.state} onChange={(e) => updateVendorContactField('state', e.target.value)} placeholder={companyState} />
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">Payment Terms Days</label>
+                                <input className="form-control" type="number" min="0" value={vendorContactForm.payment_terms_days} onChange={(e) => updateVendorContactField('payment_terms_days', e.target.value)} />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="catalogue-form-section">
+                            <div className="catalogue-form-section-header">
+                              <h4>Compliance & Payables</h4>
+                              <span>These values flow into GST-aware purchase billing and payable control.</span>
+                            </div>
+                            <div className="grid-3">
+                              <div className="form-group">
+                                <label className="form-label">GST Number</label>
+                                <input className="form-control" value={vendorContactForm.gst_number} onChange={(e) => updateVendorContactField('gst_number', e.target.value.toUpperCase())} />
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">PAN Number</label>
+                                <input className="form-control" value={vendorContactForm.pan_number} onChange={(e) => updateVendorContactField('pan_number', e.target.value.toUpperCase())} />
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">Credit Limit</label>
+                                <input className="form-control" type="number" min="0" step="0.01" value={vendorContactForm.credit_limit} onChange={(e) => updateVendorContactField('credit_limit', e.target.value)} />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="catalogue-form-section">
+                            <div className="catalogue-form-section-header">
+                              <h4>Bank & Settlement</h4>
+                              <span>Optional payment details for vendor settlement and remittance follow-up.</span>
+                            </div>
+                            <div className="grid-2">
+                              <div className="form-group">
+                                <label className="form-label">Account Holder</label>
+                                <input className="form-control" value={vendorContactForm.account_holder_name} onChange={(e) => updateVendorContactField('account_holder_name', e.target.value)} />
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">Bank Name</label>
+                                <input className="form-control" value={vendorContactForm.bank_name} onChange={(e) => updateVendorContactField('bank_name', e.target.value)} />
+                              </div>
+                            </div>
+                            <div className="grid-3">
+                              <div className="form-group">
+                                <label className="form-label">Account Number</label>
+                                <input className="form-control" value={vendorContactForm.account_number} onChange={(e) => updateVendorContactField('account_number', e.target.value)} />
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">IFSC</label>
+                                <input className="form-control" value={vendorContactForm.ifsc_code} onChange={(e) => updateVendorContactField('ifsc_code', e.target.value.toUpperCase())} />
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">UPI ID</label>
+                                <input className="form-control" value={vendorContactForm.upi_id} onChange={(e) => updateVendorContactField('upi_id', e.target.value)} />
+                              </div>
+                            </div>
+                            <div className="form-group">
+                              <label className="form-label">Internal Notes</label>
+                              <textarea className="form-control" rows={2} value={vendorContactForm.notes} onChange={(e) => updateVendorContactField('notes', e.target.value)} />
+                            </div>
+                          </div>
+                        </div>
+                        <div className="modal-footer">
+                          <button type="button" className="btn btn-secondary" onClick={closeVendorContactEditor}>Cancel</button>
+                          <button type="submit" className="btn btn-primary"><Save size={14} />Save & Select</button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
+
                 {selectedVendor && renderPartySettlementPanel(selectedVendor, 'vendor')}
                 <div className="grid-2">
                   <input className="form-control" type="date" value={purchaseForm.bill_date} onChange={(e) => setPurchaseForm({ ...purchaseForm, bill_date: e.target.value })} />
                   <input className="form-control" type="date" value={purchaseForm.due_date} onChange={(e) => setPurchaseForm({ ...purchaseForm, due_date: e.target.value })} />
                 </div>
                 <div className="grid-2">
-                  <input className="form-control" value={purchaseForm.place_of_supply} onChange={(e) => setPurchaseForm({ ...purchaseForm, place_of_supply: e.target.value })} placeholder="Place of supply" />
+                  <select className="form-control" value={purchaseForm.source_grn_id} onChange={(e) => setPurchaseForm({ ...purchaseForm, source_grn_id: e.target.value })}>
+                    <option value="">Standalone bill</option>
+                    {grns.map((row) => <option key={row.id} value={row.id}>{row.grn_number}</option>)}
+                  </select>
                   <select className="form-control" value={purchaseForm.supply_type} onChange={(e) => setPurchaseForm({ ...purchaseForm, supply_type: e.target.value })}>
                     <option value="intra-state">Intra-state</option>
                     <option value="inter-state">Inter-state</option>
                   </select>
                 </div>
-                {purchaseForm.items.map((item, index) => (
-                  <div key={`purchase-${index}`} className="grid-4">
-                    <select className="form-control" value={item.product_id} onChange={(e) => setProductLine(purchaseForm, setPurchaseForm, index, e.target.value)}>
-                      <option value="">Product</option>
-                      {products.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
-                    </select>
-                    <input className="form-control" type="number" min="0" step="0.01" value={item.quantity} onChange={(e) => { const items = [...purchaseForm.items]; items[index] = { ...items[index], quantity: e.target.value }; setPurchaseForm({ ...purchaseForm, items }); }} />
-                    <input className="form-control" type="number" min="0" step="0.01" value={item.rate} onChange={(e) => { const items = [...purchaseForm.items]; items[index] = { ...items[index], rate: e.target.value }; setPurchaseForm({ ...purchaseForm, items }); }} />
-                    <div className="bom-static-field">{formatCurrency(purchasePreview.items[index]?.line_total || 0, currencySymbol)}</div>
-                  </div>
-                ))}
-                <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <input type="checkbox" checked={purchaseForm.itc_eligible} onChange={(e) => setPurchaseForm({ ...purchaseForm, itc_eligible: e.target.checked })} />
-                  <span className="text-secondary">ITC eligible</span>
-                </label>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setPurchaseForm({ ...purchaseForm, items: [...purchaseForm.items, newLine()] })}><Plus size={13} />Add Line</button>
-                  <button type="submit" className="btn btn-primary"><Save size={14} />Post Bill</button>
+
+                {/* Product Lines */}
+                <div style={{ paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 10, textTransform: 'uppercase' }}>Line Items</div>
+                  {purchaseForm.items.map((item, index) => (
+                    <div key={`purchase-${index}`} style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--bg-secondary)', marginBottom: 8, border: '1px solid var(--border)' }}>
+                      <div className="grid-4" style={{ gap: 8 }}>
+                        <input 
+                          className="form-control" 
+                          value={item.product_name}
+                          placeholder="Product / Service"
+                          style={{ fontSize: 13 }}
+                          readOnly
+                        />
+                        <input className="form-control" type="number" min="0" step="0.01" value={item.quantity} onChange={(e) => { const items = [...purchaseForm.items]; items[index] = { ...items[index], quantity: e.target.value }; setPurchaseForm({ ...purchaseForm, items }); }} placeholder="Qty" style={{ fontSize: 13 }} />
+                        <input className="form-control" type="number" min="0" step="0.01" value={item.rate} onChange={(e) => { const items = [...purchaseForm.items]; items[index] = { ...items[index], rate: e.target.value }; setPurchaseForm({ ...purchaseForm, items }); }} placeholder="Rate" style={{ fontSize: 13 }} />
+                        <div style={{ padding: '8px 12px', borderRadius: 6, background: 'var(--bg-primary)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          {formatCurrency(purchasePreview.items[index]?.line_total || 0, currencySymbol)}
+                          <button type="button" onClick={() => { const items = purchaseForm.items.filter((_, i) => i !== index); setPurchaseForm({ ...purchaseForm, items: items.length === 0 ? [newLine()] : items }); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--text-muted)' }}><Trash size={14} /></button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="catalogue-summary-card">
-                  <span className="catalogue-summary-title">Bill total</span>
-                  <strong>{formatCurrency(purchasePreview.total, currencySymbol)}</strong>
+
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" className="btn btn-outline" onClick={() => setPurchaseForm({ ...purchaseForm, items: [...purchaseForm.items, newLine()] })} style={{ flex: 1, justifyContent: 'center' }}>
+                    <Plus size={16} style={{ marginRight: 6 }} />
+                    Add Product
+                  </button>
+                </div>
+
+                <div style={{ paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                  <div className="grid-2">
+                    <input className="form-control" value={purchaseForm.place_of_supply} onChange={(e) => setPurchaseForm({ ...purchaseForm, place_of_supply: e.target.value })} placeholder="Place of supply" />
+                  </div>
+                </div>
+
+                <label style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 12px', borderRadius: 8, background: 'var(--bg-secondary)' }}>
+                  <input type="checkbox" checked={purchaseForm.itc_eligible} onChange={(e) => setPurchaseForm({ ...purchaseForm, itc_eligible: e.target.checked })} style={{ cursor: 'pointer' }} />
+                  <span className="text-secondary" style={{ cursor: 'pointer' }}>ITC eligible</span>
+                </label>
+
+                <textarea className="form-control" value={purchaseForm.notes} onChange={(e) => setPurchaseForm({ ...purchaseForm, notes: e.target.value })} placeholder="Bill notes" rows={2} style={{ fontSize: 13 }} />
+
+                <div style={{ padding: '12px 14px', borderRadius: 10, background: 'linear-gradient(135deg, rgba(249,115,22,0.1), rgba(249,115,22,0.05))', border: '1px solid rgba(249,115,22,0.2)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Bill Total</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, marginTop: 4, color: 'var(--text)' }}>{formatCurrency(purchasePreview.total, currencySymbol)}</div>
+                    </div>
+                    <button type="submit" className="btn btn-primary"><Save size={14} />Post Bill</button>
+                  </div>
                 </div>
               </form>
             </div>
@@ -2240,6 +3131,7 @@ export default function Accounting() {
                             <button className="btn btn-secondary btn-sm" onClick={() => openProformaEditor(row)}><CheckCircle2 size={13} />Edit</button>
                             <button className="btn btn-secondary btn-sm" onClick={() => exportProformaPdf(row)}><Download size={13} />PDF</button>
                             <button className="btn btn-primary btn-sm" onClick={() => emailProforma(row)}><ReceiptText size={13} />Email</button>
+                            <button className="btn btn-success btn-sm" onClick={() => convertProformaToSalesInvoice(row)}><ReceiptText size={13} />Convert</button>
                           </div>
                         </td>
                       </tr>
@@ -3007,10 +3899,15 @@ export default function Accounting() {
                     {proformaForm.items.map((item, index) => (
                       <div key={item.id} className="grid-4" style={{ alignItems: 'end' }}>
                         <div className="form-group">
-                          <label className="form-label">Product</label>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                            <label className="form-label">Product</label>
+                            <button className="btn btn-secondary btn-sm" type="button" onClick={() => openQuickProductEditor(item.id)} title="Add product to catalogue">
+                              <Plus size={12} />New
+                            </button>
+                          </div>
                           <select className="form-control" value={item.product_id} onChange={(e) => setProformaProduct(item.id, e.target.value)}>
                             <option value="">Select product</option>
-                            {products.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
+                            {products.map((row) => <option key={row.id} value={row.id}>{row.name}{row.code ? ` (${row.code})` : ''}</option>)}
                           </select>
                         </div>
                         <div className="form-group">
@@ -3066,6 +3963,69 @@ export default function Accounting() {
                 <button type="button" className="btn btn-secondary" onClick={() => exportProformaPdf()}><Download size={14} />PDF</button>
                 <button type="button" className="btn btn-secondary" onClick={() => emailProforma()}><ReceiptText size={14} />Email</button>
                 <button type="button" className="btn btn-primary" onClick={saveProforma}><Save size={14} />Save Proforma</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {quickProductModalOpen && (
+          <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeQuickProductEditor()}>
+            <div className="modal modal-lg">
+              <div className="modal-header">
+                <div className="catalogue-modal-title">
+                  <div className="catalogue-modal-title-icon">
+                    <Package size={18} />
+                  </div>
+                  <div>
+                    <h3>Add Product</h3>
+                    <p>Create a catalogue item and attach it to this proforma line.</p>
+                  </div>
+                </div>
+                <button className="close-btn" onClick={closeQuickProductEditor}><X size={16} /></button>
+              </div>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div className="grid-2">
+                  <div className="form-group">
+                    <label className="form-label">Product Name *</label>
+                    <input className="form-control" value={quickProductForm.name} onChange={(e) => setQuickProductForm({ ...quickProductForm, name: e.target.value })} placeholder="MCB 16A" autoFocus />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Product Code</label>
+                    <input className="form-control" value={quickProductForm.code} onChange={(e) => setQuickProductForm({ ...quickProductForm, code: e.target.value })} placeholder="Optional SKU" />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Description</label>
+                  <textarea className="form-control" rows={3} value={quickProductForm.description} onChange={(e) => setQuickProductForm({ ...quickProductForm, description: e.target.value })} placeholder="Customer-facing product description" />
+                </div>
+                <div className="grid-3">
+                  <div className="form-group">
+                    <label className="form-label">Unit</label>
+                    <input className="form-control" value={quickProductForm.unit} onChange={(e) => setQuickProductForm({ ...quickProductForm, unit: e.target.value })} placeholder="PCS" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">HSN Code</label>
+                    <input className="form-control" value={quickProductForm.hsn_code} onChange={(e) => setQuickProductForm({ ...quickProductForm, hsn_code: e.target.value })} placeholder="Optional HSN" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">GST %</label>
+                    <input className="form-control" type="number" min="0" step="0.01" value={quickProductForm.gst_rate} onChange={(e) => setQuickProductForm({ ...quickProductForm, gst_rate: e.target.value })} />
+                  </div>
+                </div>
+                <div className="grid-2">
+                  <div className="form-group">
+                    <label className="form-label">Selling Price</label>
+                    <input className="form-control" type="number" min="0" step="0.01" value={quickProductForm.selling_price} onChange={(e) => setQuickProductForm({ ...quickProductForm, selling_price: e.target.value })} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Cost Price</label>
+                    <input className="form-control" type="number" min="0" step="0.01" value={quickProductForm.cost_price} onChange={(e) => setQuickProductForm({ ...quickProductForm, cost_price: e.target.value })} />
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={closeQuickProductEditor}>Cancel</button>
+                <button type="button" className="btn btn-primary" onClick={saveQuickProduct}><Save size={14} />Add Product</button>
               </div>
             </div>
           </div>

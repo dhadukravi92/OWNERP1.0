@@ -29,7 +29,7 @@ const AILeadScoring = () => {
         lead_number: 'LEAD-001',
         customer_name: 'Rajesh Kumar',
         company: 'ABC Industries',
-        industry: 'Manufacturing',
+        industry: 'Retail',
         company_size: 'Large',
         budget: 'High',
         timeline: 'Urgent',

@@ -1,7 +1,7 @@
 {
   "name": "ownerp",
   "version": "1.0.0",
-  "description": "OWNERP ERP System for Panel Manufacturing & Electrical Industry",
+  "description": "OwnERP Generic ERP System for growing businesses",
   "main": "electron/main.js",
   "homepage": "./",
   "scripts": {
@@ -44,8 +44,8 @@
   },
   "build": {
     "appId": "com.ownerp.app",
-    "productName": "OWNERP",
-    "copyright": "Copyright 2024 OWNERP",
+    "productName": "OwnERP",
+    "copyright": "Copyright 2024 OwnERP",
     "directories": {
       "output": "dist",
       "buildResources": "resources"
@@ -75,7 +75,12 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "OWNERP",
+      "shortcutName": "OwnERP",
+      "installerIcon": "public/icon.ico",
+      "uninstallerIcon": "public/icon.ico",
+      "installerHeader": "resources/installerHeader.bmp",
+      "installerSidebar": "resources/installerSidebar.bmp",
+      "uninstallerSidebar": "resources/installerSidebar.bmp",
       "include": "scripts/installer.nsh",
       "warningsAsErrors": false
     }

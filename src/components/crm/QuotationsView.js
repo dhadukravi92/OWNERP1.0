@@ -281,8 +281,8 @@ const QuotationsView = () => {
       {
         id: 'q2',
         quotationNumber: 'QT-20260401-5678',
-        lead: 'Manufacturing Corp',
-        customerEmail: 'priya@manufacturing.com',
+        lead: 'Acme Enterprises',
+        customerEmail: 'priya@example.com',
         customerWhatsapp: '+918765432109',
         issueDate: '2026-03-20',
         expiryDate: '2026-04-03',

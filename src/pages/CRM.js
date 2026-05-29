@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAppStore } from '../store/appStore';
-import db from '../utils/database';
+import db, { generateId } from '../utils/database';
 import { isDeveloperUser } from '../utils/modules';
 import LeadPipeline from '../components/crm/LeadPipeline';
 import IndiaMARTIntegration from '../components/crm/IndiaMARTIntegration';
@@ -42,10 +42,14 @@ const CRM = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [alerts, setAlerts] = useState([]);
   const [inquiries, setInquiries] = useState([]);
+  const [companySuggestions, setCompanySuggestions] = useState([]);
   const [inquirySearch, setInquirySearch] = useState('');
   const [inquiryStatusFilter, setInquiryStatusFilter] = useState('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [modalType, setModalType] = useState('inquiry');
+  const [inquiryForm, setInquiryForm] = useState(INQUIRY_DEFAULT);
+  const [inquirySaving, setInquirySaving] = useState(false);
+  const [inquiryError, setInquiryError] = useState('');
 
   // Role-based access control
   const userRole = currentUser?.role || 'operator';
@@ -87,6 +91,7 @@ const CRM = () => {
       loadCrmStats();
       loadAlerts();
       loadInquiries();
+      loadCompanySuggestions();
     }
   }, []);
 
@@ -103,6 +108,106 @@ const CRM = () => {
       ORDER BY datetime(i.created_at) DESC, i.inquiry_number DESC
     `);
     setInquiries(rows || []);
+  };
+
+  const loadCompanySuggestions = async () => {
+    const rows = await db.all(`
+      SELECT DISTINCT company
+      FROM contacts
+      WHERE type = 'customer'
+        AND is_active = 1
+        AND company IS NOT NULL
+        AND TRIM(company) <> ''
+      ORDER BY company
+      LIMIT 100
+    `);
+    setCompanySuggestions(rows || []);
+  };
+
+  const companySuggestionOptions = useMemo(
+    () => companySuggestions
+      .map((row) => `${row.company || ''}`.trim())
+      .filter(Boolean),
+    [companySuggestions]
+  );
+
+  const openInquiryModal = () => {
+    setModalType('inquiry');
+    setInquiryForm(INQUIRY_DEFAULT);
+    setInquiryError('');
+    setInquirySaving(false);
+    setShowCreateModal(true);
+  };
+
+  const closeInquiryModal = () => {
+    setShowCreateModal(false);
+    setInquiryForm(INQUIRY_DEFAULT);
+    setInquiryError('');
+    setInquirySaving(false);
+  };
+
+  const normalizePhone = (value) => `${value || ''}`.replace(/\D/g, '');
+
+  const ensureInquiryContact = async (inquiry) => {
+    if (inquiry.email) {
+      const byEmail = await db.get(
+        'SELECT id FROM contacts WHERE type = ? AND LOWER(email) = LOWER(?) AND is_active = 1',
+        ['customer', inquiry.email]
+      );
+      if (byEmail?.id) return byEmail.id;
+    }
+
+    if (inquiry.phone) {
+      const phoneDigits = normalizePhone(inquiry.phone);
+      const contacts = await db.all('SELECT id, phone FROM contacts WHERE type = ? AND is_active = 1', ['customer']);
+      const byPhone = contacts.find((contact) => normalizePhone(contact.phone) === phoneDigits);
+      if (byPhone?.id) return byPhone.id;
+    }
+
+    const id = generateId();
+    await db.run(
+      `INSERT INTO contacts (id, type, name, company, email, phone)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [id, 'customer', inquiry.customer_name || inquiry.company || 'CRM Lead', inquiry.company || '', inquiry.email || '', inquiry.phone || '']
+    );
+    return id;
+  };
+
+  const convertInquiryToLead = async (inquiry) => {
+    const customerId = await ensureInquiryContact(inquiry);
+    const duplicate = await db.get(
+      `SELECT id, lead_number FROM crm_leads
+       WHERE inquiry_id = ? AND status NOT IN ('closed_won', 'closed_lost')
+       LIMIT 1`,
+      [inquiry.id]
+    );
+    if (duplicate?.id) {
+      window.alert(`This inquiry is already linked to lead ${duplicate.lead_number || duplicate.id}.`);
+      return;
+    }
+
+    const result = await createLead({
+      inquiry_id: inquiry.id,
+      customer_id: customerId,
+      status: 'qualified',
+      value: 0,
+      probability: 30,
+      expected_close_date: '',
+      industry: '',
+      lead_source: inquiry.source || 'manual',
+      priority: inquiry.priority || 'medium',
+      notes: [inquiry.product_interest, inquiry.requirements].filter(Boolean).join('\n'),
+      assigned_to: inquiry.assigned_to || currentUser?.id || ''
+    });
+
+    if (!result?.success) {
+      window.alert(result?.error || 'Unable to convert inquiry to lead.');
+      return;
+    }
+
+    await db.run("UPDATE crm_inquiries SET status='converted', updated_at=datetime('now') WHERE id=?", [inquiry.id]);
+    await Promise.all([loadInquiries(), loadCrmStats()]);
+    setActiveTab('leads');
   };
 
   // Check access
@@ -315,10 +420,7 @@ const CRM = () => {
           <p style={{ color: 'var(--text-muted)', fontSize: 16 }}>Manage customer inquiries from various sources</p>
         </div>
         <button
-          onClick={() => {
-            setModalType('inquiry');
-            setShowCreateModal(true);
-          }}
+          onClick={openInquiryModal}
           style={{
             background: 'var(--accent)',
             color: '#fff',
@@ -429,9 +531,15 @@ const CRM = () => {
                       {item.created_at ? new Date(item.created_at).toLocaleDateString('en-IN') : '-'}
                     </td>
                     <td style={{ padding: 12, textAlign: 'center' }}>
-                      <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
-                        <MoreVertical size={16} color="var(--text-muted)" />
-                      </button>
+                      <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          disabled={item.status === 'converted'}
+                          onClick={() => convertInquiryToLead(item)}
+                        >
+                          <Users size={13} />Convert
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -453,97 +561,104 @@ const CRM = () => {
   };
 
   const InquiryCreateModal = () => {
-    const [form, setForm] = useState(INQUIRY_DEFAULT);
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState('');
-
     const updateField = (field, value) => {
-      setForm((prev) => ({ ...prev, [field]: value }));
+      setInquiryForm((prev) => ({ ...prev, [field]: value }));
     };
 
     const submitInquiry = async (event) => {
       event.preventDefault();
-      const customerName = `${form.customer_name || ''}`.trim();
-      const productInterest = `${form.product_interest || ''}`.trim();
+      const customerName = `${inquiryForm.customer_name || ''}`.trim();
+      const productInterest = `${inquiryForm.product_interest || ''}`.trim();
       if (!customerName || !productInterest) {
-        setError('Customer name and product are required.');
+        setInquiryError('Customer name and product are required.');
         return;
       }
 
-      setSaving(true);
-      setError('');
+      setInquirySaving(true);
+      setInquiryError('');
       const result = await createInquiry({
-        ...form,
+        ...inquiryForm,
         customer_name: customerName,
         product_interest: productInterest,
-        quantity: Number(form.quantity || 0)
+        quantity: Number(inquiryForm.quantity || 0)
       });
-      setSaving(false);
+      setInquirySaving(false);
 
       if (!result?.success) {
-        setError(result?.error || 'Unable to create inquiry.');
+        setInquiryError(result?.error || 'Unable to create inquiry.');
         return;
       }
 
-      setShowCreateModal(false);
+      closeInquiryModal();
       await Promise.all([loadInquiries(), loadCrmStats()]);
     };
 
     return (
-      <div className="modal-overlay" onClick={(event) => event.target === event.currentTarget && setShowCreateModal(false)}>
+      <div className="modal-overlay" onClick={(event) => event.target === event.currentTarget && closeInquiryModal()}>
         <div className="modal">
           <div className="modal-header">
             <div>
               <h3 style={{ marginBottom: 4 }}>Create Inquiry</h3>
               <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Capture lead intent before qualification and follow-up.</div>
             </div>
-            <button className="close-btn" onClick={() => setShowCreateModal(false)}>×</button>
+            <button className="close-btn" onClick={closeInquiryModal}>x</button>
           </div>
           <form onSubmit={submitInquiry}>
             <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
-              {error && (
+              {inquiryError && (
                 <div className="catalogue-form-alert">
-                  <span>{error}</span>
+                  <span>{inquiryError}</span>
                 </div>
               )}
 
               <div className="grid-2">
                 <div className="form-group">
                   <label className="form-label">Customer Name *</label>
-                  <input className="form-control" value={form.customer_name} onChange={(event) => updateField('customer_name', event.target.value)} required />
+                  <input className="form-control" value={inquiryForm.customer_name} onChange={(event) => updateField('customer_name', event.target.value)} required />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Company</label>
-                  <input className="form-control" value={form.company} onChange={(event) => updateField('company', event.target.value)} />
+                  <input
+                    className="form-control"
+                    value={inquiryForm.company}
+                    onChange={(event) => updateField('company', event.target.value)}
+                    list="crm-inquiry-company-suggestions"
+                    autoComplete="off"
+                  />
+                  <datalist id="crm-inquiry-company-suggestions">
+                    {companySuggestionOptions.map((company) => (
+                      <option key={company} value={company} />
+                    ))}
+                  </datalist>
                 </div>
               </div>
 
               <div className="grid-2">
                 <div className="form-group">
                   <label className="form-label">Phone</label>
-                  <input className="form-control" value={form.phone} onChange={(event) => updateField('phone', event.target.value)} />
+                  <input className="form-control" value={inquiryForm.phone} onChange={(event) => updateField('phone', event.target.value)} />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Email</label>
-                  <input className="form-control" type="email" value={form.email} onChange={(event) => updateField('email', event.target.value)} />
+                  <input className="form-control" type="email" value={inquiryForm.email} onChange={(event) => updateField('email', event.target.value)} />
                 </div>
               </div>
 
               <div className="grid-2">
                 <div className="form-group">
                   <label className="form-label">Product Interest *</label>
-                  <input className="form-control" value={form.product_interest} onChange={(event) => updateField('product_interest', event.target.value)} required />
+                  <input className="form-control" value={inquiryForm.product_interest} onChange={(event) => updateField('product_interest', event.target.value)} required />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Quantity</label>
-                  <input className="form-control" type="number" min="0" step="1" value={form.quantity} onChange={(event) => updateField('quantity', event.target.value)} />
+                  <input className="form-control" type="number" min="0" step="1" value={inquiryForm.quantity} onChange={(event) => updateField('quantity', event.target.value)} />
                 </div>
               </div>
 
               <div className="grid-2">
                 <div className="form-group">
                   <label className="form-label">Source</label>
-                  <select className="form-control" value={form.source} onChange={(event) => updateField('source', event.target.value)}>
+                  <select className="form-control" value={inquiryForm.source} onChange={(event) => updateField('source', event.target.value)}>
                     <option value="manual">Manual</option>
                     <option value="indiamart">IndiaMART</option>
                     <option value="website">Website</option>
@@ -552,7 +667,7 @@ const CRM = () => {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Priority</label>
-                  <select className="form-control" value={form.priority} onChange={(event) => updateField('priority', event.target.value)}>
+                  <select className="form-control" value={inquiryForm.priority} onChange={(event) => updateField('priority', event.target.value)}>
                     <option value="low">Low</option>
                     <option value="medium">Medium</option>
                     <option value="high">High</option>
@@ -562,12 +677,12 @@ const CRM = () => {
 
               <div className="form-group">
                 <label className="form-label">Requirements</label>
-                <textarea className="form-control" rows={3} value={form.requirements} onChange={(event) => updateField('requirements', event.target.value)} />
+                <textarea className="form-control" rows={3} value={inquiryForm.requirements} onChange={(event) => updateField('requirements', event.target.value)} />
               </div>
             </div>
             <div className="modal-footer">
-              <button type="button" className="btn btn-secondary" onClick={() => setShowCreateModal(false)}>Cancel</button>
-              <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving...' : 'Save Inquiry'}</button>
+              <button type="button" className="btn btn-secondary" onClick={closeInquiryModal}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={inquirySaving}>{inquirySaving ? 'Saving...' : 'Save Inquiry'}</button>
             </div>
           </form>
         </div>
@@ -674,13 +789,13 @@ const CRM = () => {
 
       {/* Content */}
       <div style={{ flex: 1, overflow: 'auto' }}>
-        {activeTab === 'dashboard' && <DashboardView />}
+        {activeTab === 'dashboard' && DashboardView()}
         {activeTab === 'pipeline' && <LeadPipeline />}
-        {activeTab === 'inquiries' && <InquiriesView />}
+        {activeTab === 'inquiries' && InquiriesView()}
         {activeTab === 'leads' && <LeadsView />}
         {activeTab === 'followups' && <FollowupsView />}
         {activeTab === 'quotations' && <QuotationsView />}
-        {activeTab === 'alerts' && <AlertsView />}
+        {activeTab === 'alerts' && AlertsView()}
         {activeTab === 'indiamart' && <IndiaMARTIntegration />}
         {activeTab === 'analytics' && <AdvancedAnalytics />}
         {activeTab === 'ai-scoring' && <AILeadScoring />}
@@ -694,7 +809,7 @@ const CRM = () => {
         )}
       </div>
 
-      {showCreateModal && modalType === 'inquiry' && <InquiryCreateModal />}
+      {showCreateModal && modalType === 'inquiry' && InquiryCreateModal()}
     </div>
   );
 };

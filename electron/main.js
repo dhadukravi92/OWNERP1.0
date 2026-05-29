@@ -10,16 +10,18 @@ const DB_FILE_NAME = 'ownerp.db';
 const LEGACY_DB_FILE_NAME = 'panelerp.db';
 const ACCOUNTING_DB_FILE_NAME = 'ownerp-accounting.db';
 const LEGACY_ACCOUNTING_DB_FILE_NAME = 'panelerp-accounting.db';
-const APP_DATA_DIR_NAME = 'OWNERP';
+const APP_DATA_DIR_NAME = 'OwnERP';
 const LEGACY_APP_DATA_DIR_NAME = 'PanelERP';
-const DEFAULT_DB_FOLDER = 'C:\\OWNERP\\database';
-const DEFAULT_ACCOUNTING_DB_FOLDER = 'C:\\OWNERP\\accounting';
-const DEFAULT_ERP_NAME = 'OWNERP';
+const PREVIOUS_APP_DATA_DIR_NAME = 'OWNERP';
+const DEFAULT_DB_FOLDER = 'C:\\OwnERP\\database';
+const DEFAULT_ACCOUNTING_DB_FOLDER = 'C:\\OwnERP\\accounting';
+const DEFAULT_ERP_NAME = 'OwnERP';
 const DEVELOPER_USERNAME = 'Developer';
 const DEVELOPER_PASSWORD = 'ElectroT@123';
 const DEVELOPER_RESET_EMAIL = 'Dhadukravi92@gmail.com';
 const HR_CONNECT_PORT = 4860;
 const HR_CONNECT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const HSN_LIBRARY_FILE = path.join(__dirname, '..', 'resources', 'hsn-library.json');
 
 let mainWindow;
 let db;
@@ -37,6 +39,18 @@ let hrConnectStatus = {
   localUrls: [],
   error: ''
 };
+
+function readHsnLibrarySeed() {
+  try {
+    if (!fs.existsSync(HSN_LIBRARY_FILE)) return [];
+    const raw = fs.readFileSync(HSN_LIBRARY_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    console.warn('Unable to read HSN seed library:', err.message);
+    return [];
+  }
+}
 const hrConnectSessions = new Map();
 let updaterModule = null;
 let updateState = {
@@ -72,7 +86,7 @@ MCowBQYDK2VwAyEAXlCnhPgQMekFrOKgd+pyZuw02Ix6iM2dg9drSE9ErkA=
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const appStore = new Store({
-  name: 'panelerp-config',
+  name: 'ownerp-config',
   defaults: {
     database: {
       folderPath: ''
@@ -606,7 +620,7 @@ function getGoogleDriveStatus() {
     folderId: config.folderId,
     folderInput: config.folderInput,
     email: config.email,
-    tokenStoragePath: path.join(app.getPath('userData'), 'panelerp-config.json')
+    tokenStoragePath: path.join(app.getPath('userData'), 'ownerp-config.json')
   };
 }
 
@@ -757,7 +771,7 @@ async function openGoogleOAuthFlow() {
         saveGoogleDriveStoreConfig({ refreshToken, email });
 
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end('<html><body style="font-family:Segoe UI,sans-serif;padding:24px;">Google Drive connected. You can close this window and return to OWNERP.</body></html>');
+        res.end('<html><body style="font-family:Segoe UI,sans-serif;padding:24px;">Google Drive connected. You can close this window and return to OwnERP.</body></html>');
         complete(() => resolve(getGoogleDriveStatus()));
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -910,8 +924,8 @@ function createPreUpdateBackup() {
   const backupFolder = path.join(masterFolder, 'backups', 'pre-update', timestamp);
   ensureDirectory(backupFolder);
 
-  const masterBackupFile = path.join(backupFolder, `panelerp_preupdate_${timestamp}_master.db`);
-  const accountingBackupFile = path.join(backupFolder, `panelerp_preupdate_${timestamp}_accounting.db`);
+  const masterBackupFile = path.join(backupFolder, `ownerp_preupdate_${timestamp}_master.db`);
+  const accountingBackupFile = path.join(backupFolder, `ownerp_preupdate_${timestamp}_accounting.db`);
 
   createDatabaseBackupFile(masterBackupFile);
   createAccountingDatabaseBackupFile(accountingBackupFile);
@@ -1003,7 +1017,7 @@ function attachAutoUpdaterListeners() {
   autoUpdater.on('update-available', (info) => {
     const version = `${info?.version || ''}`.trim();
     const title = 'Software update available';
-    const message = `OWNERP ${version || 'new version'} is available. Review and download it from Settings.`;
+    const message = `OwnERP ${version || 'new version'} is available. Review and download it from Settings.`;
 
     setUpdateState({
       checking: false,
@@ -1041,7 +1055,7 @@ function attachAutoUpdaterListeners() {
   autoUpdater.on('update-downloaded', (info) => {
     const version = `${info?.version || ''}`.trim();
     const title = 'Update ready to install';
-    const message = `OWNERP ${version || 'new version'} is downloaded. The app will create a backup before installing.`;
+    const message = `OwnERP ${version || 'new version'} is downloaded. The app will create a backup before installing.`;
 
     setUpdateState({
       checking: false,
@@ -1182,7 +1196,8 @@ function applyInstallerCompanySeedIfNeeded() {
     ['company_email', 'company_email'],
     ['company_phone', 'company_phone'],
     ['company_gst', 'company_gst'],
-    ['company_address', 'company_address']
+    ['company_address', 'company_address'],
+    ['company_industry_type', 'company_industry_type']
   ];
 
   mapping.forEach(([settingKey, seedKey]) => {
@@ -1199,13 +1214,14 @@ function ensureSystemSettings() {
 
   const defaultSettings = [
     ['erp_name', DEFAULT_ERP_NAME],
-    ['company_name', 'Panel Manufacturing Co.'],
+    ['company_name', 'OwnERP Demo Company'],
     ['company_address', ''],
     ['company_phone', ''],
     ['company_email', ''],
     ['company_gst', ''],
+    ['company_industry_type', 'Electrical Control Panels'],
     ['company_logo', '/ownerp-logo.png'],
-    ['enabled_modules', JSON.stringify(['dashboard', 'products', 'categories', 'inventory', 'contacts', 'crm', 'hr', 'accounting', 'bom', 'orders', 'inward', 'reports', 'notifications'])],
+    ['enabled_modules', JSON.stringify(['dashboard', 'products', 'categories', 'inventory', 'contacts', 'crm', 'hr', 'accounting', 'hsn', 'bom', 'orders', 'inward', 'reports', 'notifications'])],
     ['currency', 'INR'],
     ['currency_symbol', 'â‚¹'],
     ['low_stock_threshold', '10'],
@@ -1240,6 +1256,20 @@ function ensureSystemSettings() {
     db.prepare(
       "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))"
     ).run(categoriesModuleMigrationKey, 'done');
+  }
+
+  const hsnModuleMigrationKey = 'module_hsn_enabled_v1';
+  const hsnMigrationState = db.prepare('SELECT value FROM settings WHERE key = ?').get(hsnModuleMigrationKey);
+  if (!hsnMigrationState) {
+    const currentEnabledModules = parseModuleAccess(getSettingValue('enabled_modules', '[]'), []);
+    if (!currentEnabledModules.includes('hsn')) {
+      db.prepare(
+        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))"
+      ).run('enabled_modules', JSON.stringify([...currentEnabledModules, 'hsn']));
+    }
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))"
+    ).run(hsnModuleMigrationKey, 'done');
   }
 
   applyInstallerCompanySeedIfNeeded();
@@ -1361,8 +1391,8 @@ async function runGoogleDriveCloudBackup({ reason = 'manual', config, now }) {
     monthFolderName
   });
   const dateStamp = formatBackupDate(now);
-  const masterFileName = `panelerp_${config.interval}_${dateStamp}_master.db`;
-  const accountingFileName = `panelerp_${config.interval}_${dateStamp}_accounting.db`;
+  const masterFileName = `ownerp_${config.interval}_${dateStamp}_master.db`;
+  const accountingFileName = `ownerp_${config.interval}_${dateStamp}_accounting.db`;
   const masterTempFile = createTempBackupFile(masterFileName, createDatabaseBackupFile);
   const accountingTempFile = createTempBackupFile(accountingFileName, createAccountingDatabaseBackupFile);
 
@@ -1408,8 +1438,8 @@ function runLocalFolderCloudBackup({ reason = 'manual', config, now }) {
   const destination = validateBackupDestination(config.destination);
   const monthFolder = getCloudBackupMonthFolder(destination, now);
   const dateStamp = formatBackupDate(now);
-  const masterBackupFile = path.join(monthFolder, `panelerp_${config.interval}_${dateStamp}_master.db`);
-  const accountingBackupFile = path.join(monthFolder, `panelerp_${config.interval}_${dateStamp}_accounting.db`);
+  const masterBackupFile = path.join(monthFolder, `ownerp_${config.interval}_${dateStamp}_master.db`);
+  const accountingBackupFile = path.join(monthFolder, `ownerp_${config.interval}_${dateStamp}_accounting.db`);
 
   createDatabaseBackupFile(masterBackupFile);
   createAccountingDatabaseBackupFile(accountingBackupFile);
@@ -1502,6 +1532,7 @@ function getInstallerDbFolder() {
   try {
     const installerConfigPaths = [
       path.join(app.getPath('appData'), APP_DATA_DIR_NAME, 'db-folder.txt'),
+      path.join(app.getPath('appData'), PREVIOUS_APP_DATA_DIR_NAME, 'db-folder.txt'),
       path.join(app.getPath('appData'), LEGACY_APP_DATA_DIR_NAME, 'db-folder.txt')
     ];
 
@@ -1621,7 +1652,7 @@ function backupExistingTargetDatabase(targetDbPath) {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 
   if (fs.existsSync(targetDbPath)) {
-    const backupFile = path.join(path.dirname(targetDbPath), `panelerp_existing_${timestamp}.db`);
+    const backupFile = path.join(path.dirname(targetDbPath), `ownerp_existing_${timestamp}.db`);
     fs.copyFileSync(targetDbPath, backupFile);
   }
 
@@ -2206,8 +2237,13 @@ function initDatabase(folderPath = getDatabaseFolder()) {
 
     createTables();
     ensureQuotationSchema();
+    ensureProductSchema();
+    ensureBomSchema();
+    ensureProductCatalogSchema();
     ensureContactsSchema();
     ensureUserSchema();
+    ensureCrmSchema();
+    ensureHsnSchema();
     ensureSystemSettings();
     insertDefaultData();
     migrateBrandingSettings();
@@ -2277,6 +2313,43 @@ function ensureQuotationSchema() {
   ensureColumnExists('quotations', 'mail_draft', 'TEXT');
 }
 
+function ensureProductSchema() {
+  ensureColumnExists('products', 'industry_type', 'TEXT');
+  ensureColumnExists('products', 'brand', 'TEXT');
+  ensureColumnExists('products', 'model_number', 'TEXT');
+}
+
+function ensureBomSchema() {
+  ensureColumnExists('bom', 'code', 'TEXT');
+}
+
+function ensureCrmSchema() {
+  ensureColumnExists('crm_leads', 'priority', "TEXT DEFAULT 'medium'");
+}
+
+function ensureProductCatalogSchema() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS product_catalog_items (
+      id TEXT PRIMARY KEY,
+      industry_id TEXT,
+      industry_name TEXT,
+      brand TEXT NOT NULL,
+      name TEXT NOT NULL,
+      model_number TEXT,
+      category TEXT,
+      unit TEXT DEFAULT 'PCS',
+      hsn_code TEXT,
+      gst_rate REAL DEFAULT 18,
+      description TEXT,
+      specifications TEXT,
+      source_url TEXT,
+      source_type TEXT DEFAULT 'built-in',
+      imported_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(brand, model_number)
+    );
+  `);
+}
+
 function ensureContactsSchema() {
   ensureColumnExists('contacts', 'account_holder_name', 'TEXT');
   ensureColumnExists('contacts', 'bank_name', 'TEXT');
@@ -2296,9 +2369,22 @@ function ensureUserSchema() {
   ensureColumnExists('users', 'module_access', 'TEXT');
   ensureColumnExists('users', 'created_by_user_id', 'TEXT');
   ensureColumnExists('users', 'password_reset_email', 'TEXT');
+  ensureColumnExists('users', 'preferred_theme', 'TEXT');
   ensureColumnExists('users', 'is_hidden', 'INTEGER DEFAULT 0');
   ensureColumnExists('users', 'is_protected', 'INTEGER DEFAULT 0');
   ensureColumnExists('notifications', 'assigned_to', 'TEXT');
+}
+
+function ensureHsnSchema() {
+  ensureColumnExists('hsn_codes', 'chapter_code', 'TEXT');
+  ensureColumnExists('hsn_codes', 'chapter_title', 'TEXT');
+  ensureColumnExists('hsn_codes', 'gst_rate', 'REAL DEFAULT 18');
+  ensureColumnExists('hsn_codes', 'keywords', 'TEXT');
+  ensureColumnExists('hsn_codes', 'notes', 'TEXT');
+  ensureColumnExists('hsn_codes', 'source_type', "TEXT DEFAULT 'custom'");
+  ensureColumnExists('hsn_codes', 'source_reference', 'TEXT');
+  ensureColumnExists('hsn_codes', 'is_active', 'INTEGER DEFAULT 1');
+  ensureColumnExists('hsn_codes', 'updated_at', "TEXT DEFAULT (datetime('now'))");
 }
 
 function initAccountingDatabase(folderPath = getAccountingDatabaseFolder()) {
@@ -2336,6 +2422,7 @@ function createTables() {
       role TEXT NOT NULL DEFAULT 'operator',
       full_name TEXT,
       email TEXT,
+      preferred_theme TEXT,
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now')),
       last_login TEXT
@@ -2370,11 +2457,49 @@ function createTables() {
       selling_price REAL DEFAULT 0,
       cost_price REAL DEFAULT 0,
       min_stock REAL DEFAULT 0,
+      industry_type TEXT,
+      brand TEXT,
+      model_number TEXT,
       image_path TEXT,
       specifications TEXT,
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (category_id) REFERENCES categories(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS product_catalog_items (
+      id TEXT PRIMARY KEY,
+      industry_id TEXT,
+      industry_name TEXT,
+      brand TEXT NOT NULL,
+      name TEXT NOT NULL,
+      model_number TEXT,
+      category TEXT,
+      unit TEXT DEFAULT 'PCS',
+      hsn_code TEXT,
+      gst_rate REAL DEFAULT 18,
+      description TEXT,
+      specifications TEXT,
+      source_url TEXT,
+      source_type TEXT DEFAULT 'built-in',
+      imported_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(brand, model_number)
+    );
+
+    CREATE TABLE IF NOT EXISTS hsn_codes (
+      id TEXT PRIMARY KEY,
+      code TEXT UNIQUE NOT NULL,
+      description TEXT NOT NULL,
+      chapter_code TEXT,
+      chapter_title TEXT,
+      gst_rate REAL DEFAULT 18,
+      keywords TEXT,
+      notes TEXT,
+      source_type TEXT DEFAULT 'custom',
+      source_reference TEXT,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS inventory (
@@ -2597,6 +2722,7 @@ function createTables() {
 
     CREATE TABLE IF NOT EXISTS bom (
       id TEXT PRIMARY KEY,
+      code TEXT,
       name TEXT NOT NULL,
       product_id TEXT,
       version TEXT DEFAULT '1.0',
@@ -2813,6 +2939,7 @@ function createTables() {
       expected_close_date TEXT,
       industry TEXT,
       lead_source TEXT,
+      priority TEXT DEFAULT 'medium',
       notes TEXT,
       assigned_to TEXT,
       created_by TEXT,
@@ -2966,8 +3093,9 @@ function insertDefaultData() {
     ['company_phone', ''],
     ['company_email', ''],
     ['company_gst', ''],
+    ['company_industry_type', 'Electrical Control Panels'],
     ['company_logo', '/ownerp-logo.png'],
-    ['enabled_modules', JSON.stringify(['dashboard', 'products', 'categories', 'inventory', 'contacts', 'crm', 'hr', 'accounting', 'bom', 'orders', 'inward', 'reports', 'notifications'])],
+    ['enabled_modules', JSON.stringify(['dashboard', 'products', 'categories', 'inventory', 'contacts', 'crm', 'hr', 'accounting', 'hsn', 'bom', 'orders', 'inward', 'reports', 'notifications'])],
     ['currency', 'INR'],
     ['currency_symbol', 'Rs.'],
     ['low_stock_threshold', '10'],
@@ -2978,6 +3106,27 @@ function insertDefaultData() {
 
   const settingStmt = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   defaultSettings.forEach(([key, value]) => settingStmt.run(key, value));
+
+  const hsnSeedRows = readHsnLibrarySeed();
+  const hsnStmt = db.prepare(`
+    INSERT OR IGNORE INTO hsn_codes (
+      id, code, description, chapter_code, chapter_title, gst_rate, keywords, notes, source_type, source_reference, is_active, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
+  `);
+  hsnSeedRows.forEach((row) => {
+    hsnStmt.run(
+      uuidv4(),
+      `${row.code || ''}`.trim(),
+      `${row.description || ''}`.trim(),
+      `${row.chapter_code || ''}`.trim(),
+      `${row.chapter_title || ''}`.trim(),
+      Number(row.gst_rate || 18),
+      JSON.stringify(Array.isArray(row.keywords) ? row.keywords : []),
+      `${row.notes || ''}`.trim(),
+      'system',
+      'starter-library'
+    );
+  });
 
   const existingDeveloper = db.prepare('SELECT id FROM users WHERE username = ?').get(DEVELOPER_USERNAME);
   if (!existingDeveloper) {
@@ -3488,6 +3637,52 @@ function insertAccountingDefaultData() {
 
 }
 
+function stripHtml(value = '') {
+  return `${value || ''}`
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function discoverCatalogBrands({ industryName = '', query = '' } = {}) {
+  const searchText = `${query || industryName || ''} reputed product brands catalog`.trim();
+  if (!searchText) return { success: true, results: [] };
+
+  try {
+    const url = `https://duckduckgo.com/html/?q=${encodeURIComponent(searchText)}`;
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 OwnERP Catalog Discovery'
+      }
+    });
+    const html = await response.text();
+    const results = [];
+    const resultRegex = /<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    let match;
+
+    while ((match = resultRegex.exec(html)) && results.length < 8) {
+      const title = stripHtml(match[2]);
+      const href = `${match[1] || ''}`.replace(/^\/l\/\?uddg=/, '');
+      const decodedUrl = decodeURIComponent(href.split('&')[0] || href);
+      if (!title) continue;
+      results.push({
+        brand: title.split(/[-|:]/)[0].replace(/\b(catalog|products|price list|official|india)\b/gi, '').trim().slice(0, 80),
+        title,
+        url: decodedUrl
+      });
+    }
+
+    return { success: true, results };
+  } catch (err) {
+    return { success: false, error: err.message, results: [] };
+  }
+}
+
 // IPC Handlers
 ipcMain.handle('db-query', (event, { sql, params, method }) => {
   try {
@@ -3512,6 +3707,8 @@ ipcMain.handle('accounting-query', (event, { sql, params, method }) => {
     throw err;
   }
 });
+
+ipcMain.handle('discover-catalog-brands', async (event, payload) => discoverCatalogBrands(payload));
 
 ipcMain.handle('get-app-path', () => app.getPath('userData'));
 ipcMain.handle('get-database-info', () => getDatabaseInfo());

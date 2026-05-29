@@ -867,11 +867,36 @@ export default function VoucherWorkbench(props) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ borderRadius: 22, padding: 24, border: '1px solid var(--border)', background: 'linear-gradient(135deg, rgba(61,127,255,0.18), rgba(10,15,28,0.92) 42%, rgba(16,185,129,0.10))' }}>
-        <div className="catalogue-hero-kicker"><ReceiptText size={12} /><span>Voucher control center</span></div>
+      <div
+        style={{
+          borderRadius: 22,
+          padding: 24,
+          border: '1px solid var(--hero-border)',
+          background: 'var(--hero-gradient)',
+          boxShadow: 'var(--hero-shadow)'
+        }}
+      >
+        <div className="catalogue-hero-kicker" style={{ background: 'var(--hero-kicker-bg)', color: 'var(--hero-kicker-text)' }}>
+          <ReceiptText size={12} />
+          <span>Voucher control center</span>
+        </div>
         <h3 style={{ fontSize: 30, marginTop: 14, marginBottom: 8 }}>Work every accounting and stock-facing voucher from one professional desk.</h3>
-        <p className="text-secondary" style={{ maxWidth: 900 }}>Pick a module from the left, complete the form on the canvas, and let the workspace write the right voucher, inventory movement, order record, GRN, or journal entry behind the scenes.</p>
-        <div className="catalogue-chip-row" style={{ marginTop: 16 }}>{VOUCHER_MODULES.slice(0, 6).map((module) => <span key={module.key} className="catalogue-chip">{module.title} {module.hotkey}</span>)}</div>
+        <p className="text-secondary" style={{ maxWidth: 900, color: 'var(--hero-copy)' }}>Pick a module from the left, complete the form on the canvas, and let the workspace write the right voucher, inventory movement, order record, GRN, or journal entry behind the scenes.</p>
+        <div className="catalogue-chip-row" style={{ marginTop: 16 }}>
+          {VOUCHER_MODULES.slice(0, 6).map((module) => (
+            <span
+              key={module.key}
+              className="catalogue-chip"
+              style={{
+                background: 'var(--hero-chip-bg)',
+                borderColor: 'var(--hero-chip-border)',
+                color: 'var(--hero-chip-text)'
+              }}
+            >
+              {module.title} {module.hotkey}
+            </span>
+          ))}
+        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '280px minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>

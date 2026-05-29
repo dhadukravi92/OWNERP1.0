@@ -523,7 +523,7 @@ export default function OrdersPro() {
         <div className="catalogue-summary-card">
           <div className="catalogue-summary-title">Production Load</div>
           <strong>{orders.filter((order) => order.status === 'in_production').length}</strong>
-          <span className="text-muted text-sm">Orders actively consuming manufacturing capacity.</span>
+          <span className="text-muted text-sm">Orders actively consuming team capacity.</span>
         </div>
         <div className="catalogue-summary-card">
           <div className="catalogue-summary-title">Ready to Dispatch</div>

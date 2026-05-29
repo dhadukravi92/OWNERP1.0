@@ -1,7 +1,7 @@
 # CRM Module Documentation
 
 ## Overview
-The CRM (Customer Relationship Management) module is a comprehensive sales and customer management system integrated into the PanelERP platform. It provides end-to-end customer lifecycle management from initial inquiry to order conversion.
+The CRM (Customer Relationship Management) module is a comprehensive sales and customer management system integrated into the OwnERP platform. It provides end-to-end customer lifecycle management from initial inquiry to order conversion.
 
 ## Features
 
@@ -277,4 +277,4 @@ The CRM (Customer Relationship Management) module is a comprehensive sales and c
 - Advanced reporting with custom dashboards
 - Mobile app with offline capabilities
 
-This CRM module transforms PanelERP into a comprehensive business management solution, bridging the gap between sales activities and operational execution.
+This CRM module transforms OwnERP into a comprehensive business management solution, bridging the gap between sales activities and operational execution.

@@ -18,6 +18,7 @@ import Notifications from './pages/Notifications';
 import CRM from './pages/CRM';
 import Accounting from './pages/Accounting';
 import HR from './pages/HR';
+import HSNLibrary from './pages/HSNLibrary';
 import { getErpName } from './utils/branding';
 import { canAccessModule, canAccessSettings, getFirstAccessiblePath } from './utils/modules';
 import './styles/globals.css';
@@ -122,6 +123,7 @@ function App() {
             <Route path="settings" element={<ProtectedRoute adminOnly><Settings /></ProtectedRoute>} />
             <Route path="crm" element={<ProtectedRoute moduleId="crm"><CRM /></ProtectedRoute>} />
             <Route path="accounting" element={<ProtectedRoute moduleId="accounting"><Accounting /></ProtectedRoute>} />
+            <Route path="hsn" element={<ProtectedRoute moduleId="hsn"><HSNLibrary /></ProtectedRoute>} />
             <Route path="hr" element={<ProtectedRoute moduleId="hr"><HR /></ProtectedRoute>} />
             <Route path="*" element={<HomeRedirect />} />
           </Route>

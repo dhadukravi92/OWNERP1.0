@@ -2,6 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import db, { generateId } from '../utils/database';
 import { getErpName } from '../utils/branding';
+import { getDocumentTemplateDefaults } from '../utils/documentTemplates';
+import SearchableSelect from '../components/ui/SearchableSelect';
+import { analyzeIndustry, getIndustryCatalogs } from '../utils/productCatalogIntelligence';
 import {
   Save,
   Database,
@@ -13,6 +16,7 @@ import {
   X,
   SlidersHorizontal,
   Building2,
+  FileText,
   Check,
   RefreshCw
 } from 'lucide-react';
@@ -371,6 +375,7 @@ export default function SettingsWorkbench() {
   });
   const [dbActionLoading, setDbActionLoading] = useState(false);
   const [backupSaved, setBackupSaved] = useState(false);
+  const [templateSaved, setTemplateSaved] = useState(false);
   const [cloudBackupBusy, setCloudBackupBusy] = useState(false);
   const [googleDriveBusy, setGoogleDriveBusy] = useState(false);
   const [updateBusy, setUpdateBusy] = useState(false);
@@ -392,12 +397,15 @@ export default function SettingsWorkbench() {
     [manageableModuleIds]
   );
   useEffect(() => {
+    const quotationDefaults = getDocumentTemplateDefaults(settings, 'quotation');
+    const proformaDefaults = getDocumentTemplateDefaults(settings, 'proforma');
     setForm({
       company_name: settings.company_name || '',
       company_address: settings.company_address || '',
       company_phone: settings.company_phone || '',
       company_email: settings.company_email || '',
       company_gst: settings.company_gst || '',
+      company_industry_type: settings.company_industry_type || analyzeIndustry('').name,
       currency_symbol: settings.currency_symbol || '\u20B9',
       low_stock_threshold: settings.low_stock_threshold || '10',
       work_hours_per_day: settings.work_hours_per_day || '9',
@@ -411,7 +419,13 @@ export default function SettingsWorkbench() {
       cloud_backup_last_error: settings.cloud_backup_last_error || '',
       app_update_enabled: settings.app_update_enabled || 'false',
       app_update_url: settings.app_update_url || '',
-      app_update_channel: settings.app_update_channel || 'latest'
+      app_update_channel: settings.app_update_channel || 'latest',
+      quotation_default_subject: quotationDefaults.subject,
+      quotation_default_mail_draft: quotationDefaults.mailDraft,
+      quotation_default_terms: quotationDefaults.terms,
+      proforma_default_subject: proformaDefaults.subject,
+      proforma_default_mail_draft: proformaDefaults.mailDraft,
+      proforma_default_terms: proformaDefaults.terms
     });
     setEnabledModules(getEnabledModuleIds(settings));
     setMainMenuShortcuts(getMainMenuShortcutMap(settings));
@@ -557,10 +571,47 @@ export default function SettingsWorkbench() {
   };
 
   const handleSaveCompany = async () => {
-    for (const [key, val] of Object.entries(form)) {
-      await updateSetting(key, val);
+    const companyKeys = [
+      'company_name',
+      'company_address',
+      'company_phone',
+      'company_email',
+      'company_gst',
+      'company_industry_type',
+      'currency_symbol',
+      'low_stock_threshold',
+      'work_hours_per_day',
+      'auto_backup',
+      'cloud_backup_enabled',
+      'cloud_backup_provider',
+      'cloud_backup_destination',
+      'cloud_backup_interval',
+      'cloud_backup_last_run_at',
+      'cloud_backup_last_file',
+      'cloud_backup_last_error',
+      'app_update_enabled',
+      'app_update_url',
+      'app_update_channel'
+    ];
+    for (const key of companyKeys) {
+      await updateSetting(key, form[key] || '');
     }
     flashSaved(setSaved);
+  };
+
+  const handleSaveDocumentTemplates = async () => {
+    const templateKeys = [
+      'quotation_default_subject',
+      'quotation_default_mail_draft',
+      'quotation_default_terms',
+      'proforma_default_subject',
+      'proforma_default_mail_draft',
+      'proforma_default_terms'
+    ];
+    for (const key of templateKeys) {
+      await updateSetting(key, form[key] || '');
+    }
+    flashSaved(setTemplateSaved);
   };
 
   const handleSaveModules = async () => {
@@ -799,7 +850,7 @@ export default function SettingsWorkbench() {
     }
 
     const confirmed = window.confirm(
-      'OWNERP will create a backup of both databases and then restart to install the downloaded update. Continue?'
+      'OwnERP will create a backup of both databases and then restart to install the downloaded update. Continue?'
     );
     if (!confirmed) return;
 
@@ -816,7 +867,7 @@ export default function SettingsWorkbench() {
       }
 
       if (result?.backupFiles?.length) {
-        alert(`Pre-update backup completed:\n${result.backupFiles.join('\n')}\n\nOWNERP will now restart to install the new version.`);
+        alert(`Pre-update backup completed:\n${result.backupFiles.join('\n')}\n\nOwnERP will now restart to install the new version.`);
       }
     } finally {
       setUpdateBusy(false);
@@ -1035,6 +1086,7 @@ export default function SettingsWorkbench() {
   const canViewBackupData = isDeveloperUser(currentUser) || isAdminUser(currentUser);
   const tabs = [
     { id: 'company', label: 'Company Profile', icon: Building2 },
+    { id: 'documents', label: 'Document Defaults', icon: FileText },
     { id: 'modules', label: 'Module Access', icon: SlidersHorizontal },
     { id: 'users', label: 'Users', icon: User },
     ...(canViewBackupData ? [{ id: 'backup', label: 'Backup & Data', icon: Database }] : [])
@@ -1115,6 +1167,26 @@ export default function SettingsWorkbench() {
                   </div>
                 </div>
 
+                <div className="form-group">
+                  <label className="form-label">Primary Industry Type</label>
+                  <SearchableSelect
+                    value={analyzeIndustry(form.company_industry_type).id}
+                    onChange={(industryId) => {
+                      const industry = getIndustryCatalogs().find((item) => item.id === industryId) || analyzeIndustry(industryId);
+                      setForm((prev) => ({ ...prev, company_industry_type: industry.name }));
+                    }}
+                    options={getIndustryCatalogs().map((industry) => ({
+                      value: industry.id,
+                      label: industry.name,
+                      keywords: industry.keywords
+                    }))}
+                    placeholder="Search company industry..."
+                  />
+                  <span className="text-xs text-muted">
+                    Product Catalogue uses this as the default industry for brand discovery and catalog imports.
+                  </span>
+                </div>
+
                 <div className="divider" />
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -1164,6 +1236,85 @@ export default function SettingsWorkbench() {
                   <button className="btn btn-primary" onClick={handleSaveCompany}><Save size={14} /> Save Company Settings</button>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+        {activeTab === 'documents' && (
+          <div style={{ maxWidth: 980, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div className="card">
+              <div className="card-header">
+                <h4>Quotation Defaults</h4>
+                {templateSaved && <span className="badge badge-success">Saved</span>}
+              </div>
+              <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div className="form-group">
+                  <label className="form-label">Default Subject</label>
+                  <input
+                    className="form-control"
+                    value={form.quotation_default_subject || ''}
+                    onChange={(e) => setForm((prev) => ({ ...prev, quotation_default_subject: e.target.value }))}
+                    placeholder="Quotation for your approval"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Default General Email Draft</label>
+                  <textarea
+                    className="form-control"
+                    rows={5}
+                    value={form.quotation_default_mail_draft || ''}
+                    onChange={(e) => setForm((prev) => ({ ...prev, quotation_default_mail_draft: e.target.value }))}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Default Terms & Conditions</label>
+                  <textarea
+                    className="form-control"
+                    rows={4}
+                    value={form.quotation_default_terms || ''}
+                    onChange={(e) => setForm((prev) => ({ ...prev, quotation_default_terms: e.target.value }))}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="card-header">
+                <h4>Proforma Defaults</h4>
+                {templateSaved && <span className="badge badge-success">Saved</span>}
+              </div>
+              <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div className="form-group">
+                  <label className="form-label">Default Subject</label>
+                  <input
+                    className="form-control"
+                    value={form.proforma_default_subject || ''}
+                    onChange={(e) => setForm((prev) => ({ ...prev, proforma_default_subject: e.target.value }))}
+                    placeholder="Proforma invoice for your approval"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Default General Email Draft</label>
+                  <textarea
+                    className="form-control"
+                    rows={5}
+                    value={form.proforma_default_mail_draft || ''}
+                    onChange={(e) => setForm((prev) => ({ ...prev, proforma_default_mail_draft: e.target.value }))}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Default Terms & Conditions</label>
+                  <textarea
+                    className="form-control"
+                    rows={4}
+                    value={form.proforma_default_terms || ''}
+                    onChange={(e) => setForm((prev) => ({ ...prev, proforma_default_terms: e.target.value }))}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="btn btn-primary" onClick={handleSaveDocumentTemplates}><Save size={14} /> Save Document Defaults</button>
             </div>
           </div>
         )}
@@ -1523,7 +1674,7 @@ export default function SettingsWorkbench() {
                       <div>
                         <div style={{ fontSize: 13, marginBottom: 4 }}>How it works</div>
                         <div className="text-secondary" style={{ fontSize: 12 }}>
-                          OWNERP creates the backup files locally, uploads both databases to the selected Google Drive folder through the Drive API, and reuses the saved login token for manual and scheduled backups.
+                          OwnERP creates the backup files locally, uploads both databases to the selected Google Drive folder through the Drive API, and reuses the saved login token for manual and scheduled backups.
                         </div>
                       </div>
                     </div>
@@ -1548,7 +1699,7 @@ export default function SettingsWorkbench() {
                         className="form-control"
                         value={form.cloud_backup_destination || ''}
                         onChange={(e) => setForm((prev) => ({ ...prev, cloud_backup_destination: e.target.value }))}
-                        placeholder="Example: C:\\Users\\YourName\\Google Drive\\OWNERP Backups"
+                        placeholder="Example: C:\\Users\\YourName\\Google Drive\\OwnERP Backups"
                       />
                       <button type="button" className="btn btn-secondary" onClick={handleSelectCloudBackupFolder}>
                         <Database size={14} /> Browse

@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   runCloudBackup: () => ipcRenderer.invoke('run-cloud-backup'),
   restoreDatabaseBackup: () => ipcRenderer.invoke('restore-database-backup'),
   exportExcel: (args) => ipcRenderer.invoke('export-excel', args),
+  discoverCatalogBrands: (args) => ipcRenderer.invoke('discover-catalog-brands', args),
   sendDocumentEmail: (args) => ipcRenderer.invoke('send-document-email', args),
   setWindowTitle: (title) => ipcRenderer.invoke('set-window-title', title),
   isElectron: true

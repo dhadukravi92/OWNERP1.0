@@ -1,22 +1,22 @@
 chooseInstallationOptions:
-  en: Choose Installation Mode
+  en: Choose OwnERP Installation Mode
 whoShouldThisApplicationBeInstalledFor:
-  en: Which OWNERP installation mode do you want to use?
+  en: Select how this ERP workspace should be available on this computer.
 selectUserMode:
-  en: Select whether OWNERP should run as a shared Master System for this computer or as a User System only for the current Windows user.
+  en: Choose Master System for a shared business workstation, or User System for a private single-user setup.
 forAll:
-  en: Master System (&all users)
+  en: Master System - shared for all Windows users
 onlyForMe:
-  en: User System (&me)
+  en: User System - only for me
 freshInstallForAll:
-  en: Master System install for all users. (will prompt for admin credentials)
+  en: Installs OwnERP as a shared workstation app. Recommended for office PCs used by multiple staff members.
 freshInstallForCurrent:
-  en: User System install for the current user only.
+  en: Installs OwnERP only for the current Windows account. Recommended for laptops and personal workstations.
 perMachineInstallExists:
-  en: There is already a Master System installation.
+  en: A shared Master System installation already exists. Setup will reinstall or upgrade it.
 perMachineInstall:
-  en: There is a Master System installation.
+  en: Shared Master System installation
 perUserInstallExists:
-  en: There is already a User System installation.
+  en: A User System installation already exists. Setup will reinstall or upgrade it.
 perUserInstall:
-  en: There is a User System installation.
+  en: User System installation

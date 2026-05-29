@@ -1,915 +1,450 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Calendar, Edit, Mail, Phone, Plus, Search, Trash2, Users } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
-import {
-  Users, Plus, Search, Filter, MoreVertical, Eye, Edit, Trash2,
-  Phone, Mail, Calendar, MapPin, DollarSign, TrendingUp,
-  CheckCircle, XCircle, AlertTriangle, Clock, Star
-} from 'lucide-react';
+import db, { formatCurrency, generateDocNumber, generateId, getNextSequence } from '../../utils/database';
 
-const LeadsView = () => {
-  const { currentUser } = useAppStore();
+const today = () => new Date().toISOString().slice(0, 10);
+
+const emptyLeadForm = (currentUser) => ({
+  contact_id: '',
+  company_name: '',
+  contact_person: '',
+  email: '',
+  phone: '',
+  address: '',
+  city: '',
+  state: '',
+  industry: '',
+  lead_source: 'manual',
+  value: '',
+  probability: 25,
+  status: 'new',
+  priority: 'medium',
+  notes: '',
+  assigned_to: currentUser?.id || '',
+  expected_close_date: '',
+  next_followup_date: ''
+});
+
+const statusOptions = [
+  { value: 'new', label: 'New' },
+  { value: 'contacted', label: 'Contacted' },
+  { value: 'qualified', label: 'Qualified' },
+  { value: 'proposal', label: 'Proposal' },
+  { value: 'negotiation', label: 'Negotiation' },
+  { value: 'closed_won', label: 'Closed Won' },
+  { value: 'closed_lost', label: 'Closed Lost' }
+];
+
+const sourceOptions = [
+  { value: 'manual', label: 'Manual' },
+  { value: 'indiamart', label: 'IndiaMART' },
+  { value: 'website', label: 'Website' },
+  { value: 'referral', label: 'Referral' },
+  { value: 'cold_call', label: 'Cold Call' },
+  { value: 'trade_show', label: 'Trade Show' },
+  { value: 'other', label: 'Other' }
+];
+
+const industryOptions = [
+  'Manufacturing', 'Electrical Panels', 'Industrial Automation', 'Retail', 'Healthcare',
+  'Education', 'Finance', 'Construction', 'Automotive', 'Other'
+];
+
+function normalizePhone(value) {
+  return `${value || ''}`.replace(/\D/g, '');
+}
+
+function getOwnerName(currentUser) {
+  return currentUser?.full_name || currentUser?.username || currentUser?.name || '';
+}
+
+function getStatusColor(status) {
+  switch (status) {
+    case 'new': return 'var(--info)';
+    case 'contacted': return 'var(--warning)';
+    case 'qualified': return 'var(--success)';
+    case 'proposal': return 'var(--primary)';
+    case 'negotiation': return 'var(--accent)';
+    case 'closed_won': return 'var(--success)';
+    case 'closed_lost': return 'var(--danger)';
+    default: return 'var(--text-muted)';
+  }
+}
+
+function getPriorityColor(priority) {
+  switch (priority) {
+    case 'high': return 'var(--danger)';
+    case 'medium': return 'var(--warning)';
+    case 'low': return 'var(--info)';
+    default: return 'var(--text-muted)';
+  }
+}
+
+export default function LeadsView() {
+  const { currentUser, settings, loadCrmStats } = useAppStore();
   const [leads, setLeads] = useState([]);
-  const [filteredLeads, setFilteredLeads] = useState([]);
+  const [users, setUsers] = useState([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingLead, setEditingLead] = useState(null);
+  const [form, setForm] = useState(emptyLeadForm(currentUser));
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterSource, setFilterSource] = useState('all');
-
-  const [newLead, setNewLead] = useState({
-    company_name: '',
-    contact_person: '',
-    email: '',
-    phone: '',
-    address: '',
-    city: '',
-    state: '',
-    pincode: '',
-    industry: '',
-    source: 'indiamart',
-    value: '',
-    probability: 50,
-    status: 'new',
-    priority: 'medium',
-    notes: '',
-    assigned_to: currentUser?.id || '',
-    expected_close_date: ''
-  });
+  const [error, setError] = useState('');
+  const currency = settings?.currency_symbol || '\u20B9';
 
   useEffect(() => {
     loadLeads();
+    db.all('SELECT id, username, full_name FROM users WHERE is_active = 1 ORDER BY full_name, username').then((rows) => setUsers(rows || []));
   }, []);
 
-  useEffect(() => {
-    filterLeads();
+  const loadLeads = async () => {
+    const rows = await db.all(`
+      SELECT l.*, c.name AS contact_person, c.company AS company_name, c.email, c.phone,
+        c.address, c.city, c.state, u.full_name AS assigned_user,
+        MAX(f.scheduled_date) AS next_followup_date,
+        MAX(f.actual_date) AS last_contact
+      FROM crm_leads l
+      LEFT JOIN contacts c ON c.id = l.customer_id
+      LEFT JOIN users u ON u.id = l.assigned_to
+      LEFT JOIN crm_followups f ON f.lead_id = l.id
+      GROUP BY l.id
+      ORDER BY datetime(l.updated_at) DESC, datetime(l.created_at) DESC
+    `);
+    setLeads(rows || []);
+  };
+
+  const filteredLeads = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    return leads.filter((lead) => {
+      const haystack = [
+        lead.lead_number,
+        lead.company_name,
+        lead.contact_person,
+        lead.email,
+        lead.phone,
+        lead.industry,
+        lead.notes
+      ].filter(Boolean).join(' ').toLowerCase();
+      return (!term || haystack.includes(term))
+        && (filterStatus === 'all' || lead.status === filterStatus)
+        && (filterSource === 'all' || lead.lead_source === filterSource);
+    });
   }, [leads, searchTerm, filterStatus, filterSource]);
 
-  const loadLeads = () => {
-    // Mock data - in real app, this would come from the database
-    const mockLeads = [
-      {
-        id: '1',
-        company_name: 'Tech Solutions Pvt Ltd',
-        contact_person: 'Rajesh Kumar',
-        email: 'rajesh@techsolutions.com',
-        phone: '+91-9876543210',
-        address: '123 Business Park',
-        city: 'Mumbai',
-        state: 'Maharashtra',
-        pincode: '400001',
-        industry: 'IT Services',
-        source: 'indiamart',
-        value: 250000,
-        probability: 75,
-        status: 'qualified',
-        priority: 'high',
-        notes: 'Interested in ERP implementation',
-        assigned_to: 'sales1',
-        created_at: '2024-01-15',
-        updated_at: '2024-01-20',
-        expected_close_date: '2024-02-15',
-        last_contact: '2024-01-20'
-      },
-      {
-        id: '2',
-        company_name: 'Manufacturing Corp',
-        contact_person: 'Priya Sharma',
-        email: 'priya@manufacturing.com',
-        phone: '+91-8765432109',
-        address: '456 Industrial Area',
-        city: 'Delhi',
-        state: 'Delhi',
-        pincode: '110001',
-        industry: 'Manufacturing',
-        source: 'website',
-        value: 500000,
-        probability: 60,
-        status: 'contacted',
-        priority: 'medium',
-        notes: 'Needs inventory management system',
-        assigned_to: 'sales2',
-        created_at: '2024-01-10',
-        updated_at: '2024-01-18',
-        expected_close_date: '2024-03-01',
-        last_contact: '2024-01-18'
-      },
-      {
-        id: '3',
-        company_name: 'Retail Traders Ltd',
-        contact_person: 'Amit Singh',
-        email: 'amit@retailtraders.com',
-        phone: '+91-7654321098',
-        address: '789 Market Street',
-        city: 'Bangalore',
-        state: 'Karnataka',
-        pincode: '560001',
-        industry: 'Retail',
-        source: 'referral',
-        value: 150000,
-        probability: 40,
-        status: 'new',
-        priority: 'low',
-        notes: 'Small business looking for basic CRM',
-        assigned_to: 'sales1',
-        created_at: '2024-01-22',
-        updated_at: '2024-01-22',
-        expected_close_date: '2024-04-01',
-        last_contact: null
-      }
-    ];
-    setLeads(mockLeads);
-  };
-
-  const filterLeads = () => {
-    let filtered = leads;
-
-    if (searchTerm) {
-      filtered = filtered.filter(lead =>
-        lead.company_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        lead.contact_person.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        lead.email.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-
-    if (filterStatus !== 'all') {
-      filtered = filtered.filter(lead => lead.status === filterStatus);
-    }
-
-    if (filterSource !== 'all') {
-      filtered = filtered.filter(lead => lead.source === filterSource);
-    }
-
-    setFilteredLeads(filtered);
-  };
-
-  const saveLead = () => {
-    if (editingLead) {
-      setLeads(leads.map(lead =>
-        lead.id === editingLead.id
-          ? { ...newLead, id: editingLead.id, updated_at: new Date().toISOString().split('T')[0] }
-          : lead
-      ));
-    } else {
-      const lead = {
-        ...newLead,
-        id: Date.now().toString(),
-        created_at: new Date().toISOString().split('T')[0],
-        updated_at: new Date().toISOString().split('T')[0]
-      };
-      setLeads([...leads, lead]);
-    }
-    setShowCreateModal(false);
-    setEditingLead(null);
-    resetForm();
-  };
-
-  const deleteLead = (id) => {
-    if (window.confirm('Are you sure you want to delete this lead?')) { // eslint-disable-line no-restricted-globals
-      setLeads(leads.filter(lead => lead.id !== id));
-    }
-  };
-
-  const editLead = (lead) => {
+  const openEditor = (lead = null) => {
     setEditingLead(lead);
-    setNewLead(lead);
+    setError('');
+    if (lead) {
+      setForm({
+        contact_id: lead.customer_id || '',
+        company_name: lead.company_name || '',
+        contact_person: lead.contact_person || '',
+        email: lead.email || '',
+        phone: lead.phone || '',
+        address: lead.address || '',
+        city: lead.city || '',
+        state: lead.state || '',
+        industry: lead.industry || '',
+        lead_source: lead.lead_source || 'manual',
+        value: lead.value || '',
+        probability: Number(lead.probability || 0),
+        status: lead.status || 'new',
+        priority: lead.priority || 'medium',
+        notes: lead.notes || '',
+        assigned_to: lead.assigned_to || currentUser?.id || '',
+        expected_close_date: lead.expected_close_date || '',
+        next_followup_date: ''
+      });
+    } else {
+      setForm(emptyLeadForm(currentUser));
+    }
     setShowCreateModal(true);
   };
 
-  const resetForm = () => {
-    setNewLead({
-      company_name: '',
-      contact_person: '',
-      email: '',
-      phone: '',
-      address: '',
-      city: '',
-      state: '',
-      pincode: '',
-      industry: '',
-      source: 'indiamart',
-      value: '',
-      probability: 50,
-      status: 'new',
-      priority: 'medium',
-      notes: '',
-      assigned_to: currentUser?.id || '',
-      expected_close_date: ''
-    });
+  const closeEditor = () => {
+    setShowCreateModal(false);
+    setEditingLead(null);
+    setError('');
+    setForm(emptyLeadForm(currentUser));
   };
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'new': return 'var(--info)';
-      case 'contacted': return 'var(--warning)';
-      case 'qualified': return 'var(--success)';
-      case 'proposal': return 'var(--primary)';
-      case 'negotiation': return 'var(--accent)';
-      case 'won': return 'var(--success)';
-      case 'lost': return 'var(--danger)';
-      default: return 'var(--text-muted)';
+  const updateField = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
+
+  const findExistingContact = async () => {
+    const phone = normalizePhone(form.phone);
+    if (form.email) {
+      const byEmail = await db.get('SELECT * FROM contacts WHERE type = ? AND LOWER(email) = LOWER(?) AND is_active = 1', ['customer', form.email.trim()]);
+      if (byEmail) return byEmail;
     }
-  };
-
-  const getPriorityColor = (priority) => {
-    switch (priority) {
-      case 'high': return 'var(--danger)';
-      case 'medium': return 'var(--warning)';
-      case 'low': return 'var(--info)';
-      default: return 'var(--text-muted)';
+    if (phone) {
+      const contacts = await db.all('SELECT * FROM contacts WHERE type = ? AND is_active = 1', ['customer']);
+      return contacts.find((contact) => normalizePhone(contact.phone) === phone) || null;
     }
+    return null;
   };
 
-  const statusOptions = [
-    { value: 'new', label: 'New' },
-    { value: 'contacted', label: 'Contacted' },
-    { value: 'qualified', label: 'Qualified' },
-    { value: 'proposal', label: 'Proposal Sent' },
-    { value: 'negotiation', label: 'Negotiation' },
-    { value: 'won', label: 'Won' },
-    { value: 'lost', label: 'Lost' }
-  ];
+  const ensureContact = async () => {
+    const existing = form.contact_id
+      ? await db.get('SELECT * FROM contacts WHERE id = ?', [form.contact_id])
+      : await findExistingContact();
+    const payload = [
+      'customer',
+      form.contact_person.trim(),
+      form.company_name.trim(),
+      form.email.trim(),
+      form.phone.trim(),
+      form.address,
+      form.city,
+      form.state
+    ];
 
-  const sourceOptions = [
-    { value: 'indiamart', label: 'IndiaMART' },
-    { value: 'website', label: 'Website' },
-    { value: 'referral', label: 'Referral' },
-    { value: 'cold_call', label: 'Cold Call' },
-    { value: 'social_media', label: 'Social Media' },
-    { value: 'trade_show', label: 'Trade Show' },
-    { value: 'other', label: 'Other' }
-  ];
+    if (existing?.id) {
+      await db.run(
+        `UPDATE contacts SET type=?, name=?, company=?, email=?, phone=?, address=?, city=?, state=?
+         WHERE id=?`,
+        [...payload, existing.id]
+      );
+      return existing.id;
+    }
 
-  const industryOptions = [
-    'IT Services', 'Manufacturing', 'Retail', 'Healthcare', 'Education',
-    'Finance', 'Construction', 'Automotive', 'Food & Beverage', 'Other'
-  ];
+    const id = generateId();
+    await db.run(
+      `INSERT INTO contacts (id, type, name, company, email, phone, address, city, state)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, ...payload]
+    );
+    return id;
+  };
+
+  const saveLead = async () => {
+    const companyName = form.company_name.trim();
+    const contactName = form.contact_person.trim();
+    if (!companyName || !contactName) {
+      setError('Company name and contact person are required.');
+      return;
+    }
+
+    const existingContact = await findExistingContact();
+    if (!editingLead && existingContact?.id) {
+      const duplicateLead = await db.get(
+        `SELECT id, lead_number FROM crm_leads
+         WHERE customer_id = ? AND status NOT IN ('closed_won', 'closed_lost')
+         LIMIT 1`,
+        [existingContact.id]
+      );
+      if (duplicateLead) {
+        setError(`Possible duplicate: active lead ${duplicateLead.lead_number || duplicateLead.id} already exists for this contact.`);
+        return;
+      }
+    }
+
+    const customerId = await ensureContact();
+    const nowUser = currentUser?.id || null;
+    const leadValues = [
+      customerId,
+      form.status,
+      Number(form.value || 0),
+      Number(form.probability || 0),
+      form.expected_close_date || null,
+      form.industry,
+      form.lead_source,
+      form.notes,
+      form.assigned_to || nowUser,
+      form.priority
+    ];
+
+    if (editingLead?.id) {
+      await db.run(
+        `UPDATE crm_leads
+         SET customer_id=?, status=?, value=?, probability=?, expected_close_date=?, industry=?,
+          lead_source=?, notes=?, assigned_to=?, priority=?, updated_at=datetime('now')
+         WHERE id=?`,
+        [...leadValues, editingLead.id]
+      );
+    } else {
+      const seq = await getNextSequence('crm_leads', 'lead_number', 'LEAD');
+      const leadNumber = generateDocNumber('LEAD', seq);
+      const id = generateId();
+      await db.run(
+        `INSERT INTO crm_leads (
+          id, lead_number, customer_id, status, value, probability, expected_close_date,
+          industry, lead_source, notes, assigned_to, priority, created_by, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+        [id, leadNumber, ...leadValues, nowUser]
+      );
+      await db.run(
+        'INSERT INTO crm_activities (id, lead_id, activity_type, description, created_by) VALUES (?, ?, ?, ?, ?)',
+        [generateId(), id, 'created', 'Lead created from CRM lead form', nowUser]
+      );
+      if (form.next_followup_date) {
+        await db.run(
+          `INSERT INTO crm_followups (id, lead_id, followup_type, scheduled_date, notes, created_by)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [generateId(), id, 'call', form.next_followup_date, 'Initial lead follow-up', nowUser]
+        );
+      }
+    }
+
+    closeEditor();
+    await Promise.all([loadLeads(), loadCrmStats?.()]);
+  };
+
+  const closeLead = async (lead) => {
+    if (!window.confirm('Mark this lead as closed lost?')) return;
+    await db.run("UPDATE crm_leads SET status='closed_lost', updated_at=datetime('now') WHERE id=?", [lead.id]);
+    await loadLeads();
+    await loadCrmStats?.();
+  };
 
   return (
     <div style={{ padding: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, gap: 16 }}>
         <div>
-          <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8, color: 'var(--text)' }}>
-            Leads Management
-          </h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: 16 }}>
-            Manage and track all your sales leads
-          </p>
+          <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8, color: 'var(--text)' }}>Leads Management</h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: 16 }}>Database-backed lead control from contact capture to follow-up and conversion.</p>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          style={{
-            background: 'var(--accent)',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 8,
-            padding: '12px 20px',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8
-          }}
-        >
-          <Plus size={16} />
-          Add New Lead
-        </button>
+        <button className="btn btn-primary" onClick={() => openEditor()}><Plus size={16} />Add New Lead</button>
       </div>
 
-      {/* Filters */}
-      <div style={{
-        display: 'flex',
-        gap: 16,
-        marginBottom: 24,
-        flexWrap: 'wrap',
-        alignItems: 'center'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 300 }}>
+      <div className="filter-bar">
+        <div className="search-bar">
           <Search size={16} color="var(--text-muted)" />
-          <input
-            type="text"
-            placeholder="Search leads..."
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            style={{
-              flex: 1,
-              padding: '10px 12px',
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-              background: 'var(--bg-secondary)',
-              color: 'var(--text)',
-              fontSize: 14
-            }}
-          />
+          <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search lead, company, phone, email..." />
         </div>
-
-        <select
-          value={filterStatus}
-          onChange={e => setFilterStatus(e.target.value)}
-          style={{
-            padding: '10px 12px',
-            border: '1px solid var(--border)',
-            borderRadius: 6,
-            background: 'var(--bg-secondary)',
-            color: 'var(--text)',
-            fontSize: 14,
-            minWidth: 120
-          }}
-        >
+        <select className="form-control" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ maxWidth: 170 }}>
           <option value="all">All Status</option>
-          {statusOptions.map(status => (
-            <option key={status.value} value={status.value}>{status.label}</option>
-          ))}
+          {statusOptions.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
         </select>
-
-        <select
-          value={filterSource}
-          onChange={e => setFilterSource(e.target.value)}
-          style={{
-            padding: '10px 12px',
-            border: '1px solid var(--border)',
-            borderRadius: 6,
-            background: 'var(--bg-secondary)',
-            color: 'var(--text)',
-            fontSize: 14,
-            minWidth: 120
-          }}
-        >
+        <select className="form-control" value={filterSource} onChange={(e) => setFilterSource(e.target.value)} style={{ maxWidth: 170 }}>
           <option value="all">All Sources</option>
-          {sourceOptions.map(source => (
-            <option key={source.value} value={source.value}>{source.label}</option>
-          ))}
+          {sourceOptions.map((source) => <option key={source.value} value={source.value}>{source.label}</option>)}
         </select>
+        <span className="text-muted text-sm" style={{ marginLeft: 'auto' }}>{filteredLeads.length} leads</span>
       </div>
 
-      {/* Leads Grid */}
-      <div style={{ display: 'grid', gap: 16 }}>
-        {filteredLeads.map(lead => (
-          <div key={lead.id} style={{
-            background: 'var(--bg-secondary)',
-            border: '1px solid var(--border)',
-            borderRadius: 12,
-            padding: 20,
-            display: 'grid',
-            gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto',
-            gap: 16,
-            alignItems: 'center'
-          }}>
-            {/* Lead Info */}
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-                <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', margin: 0 }}>
-                  {lead.company_name}
-                </h3>
-                <div style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  padding: '2px 8px',
-                  borderRadius: 12,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  background: `${getStatusColor(lead.status)}15`,
-                  color: getStatusColor(lead.status)
-                }}>
-                  {statusOptions.find(s => s.value === lead.status)?.label}
-                </div>
-                <div style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  padding: '2px 8px',
-                  borderRadius: 12,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  background: `${getPriorityColor(lead.priority)}15`,
-                  color: getPriorityColor(lead.priority)
-                }}>
-                  {lead.priority}
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16, fontSize: 14, color: 'var(--text-muted)' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <Users size={14} />
-                  {lead.contact_person}
-                </span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <Mail size={14} />
-                  {lead.email}
-                </span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <Phone size={14} />
-                  {lead.phone}
-                </span>
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                {lead.city}, {lead.state} • {sourceOptions.find(s => s.value === lead.source)?.label}
-              </div>
-            </div>
-
-            {/* Value */}
-            <div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)' }}>
-                ₹{lead.value.toLocaleString()}
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                {lead.probability}% probability
-              </div>
-            </div>
-
-            {/* Industry */}
-            <div>
-              <div style={{ fontSize: 14, color: 'var(--text)' }}>{lead.industry}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lead.source}</div>
-            </div>
-
-            {/* Dates */}
-            <div>
-              <div style={{ fontSize: 14, color: 'var(--text)' }}>
-                <Calendar size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />
-                {lead.expected_close_date}
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                Last: {lead.last_contact || 'Never'}
-              </div>
-            </div>
-
-            {/* Assigned To */}
-            <div>
-              <div style={{ fontSize: 14, color: 'var(--text)' }}>{lead.assigned_to}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Sales Rep</div>
-            </div>
-
-            {/* Actions */}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                onClick={() => editLead(lead)}
-                style={{
-                  background: 'var(--primary-dim)',
-                  color: 'var(--primary)',
-                  border: 'none',
-                  borderRadius: 6,
-                  padding: '8px',
-                  cursor: 'pointer'
-                }}
-              >
-                <Edit size={16} />
-              </button>
-              <button
-                onClick={() => deleteLead(lead.id)}
-                style={{
-                  background: 'var(--danger-dim)',
-                  color: 'var(--danger)',
-                  border: 'none',
-                  borderRadius: 6,
-                  padding: '8px',
-                  cursor: 'pointer'
-                }}
-              >
-                <Trash2 size={16} />
-              </button>
-            </div>
-          </div>
-        ))}
+      <div className="page-content" style={{ padding: 0 }}>
+        <div className="table-container" style={{ height: '100%' }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Lead</th>
+                <th>Contact</th>
+                <th>Value</th>
+                <th>Stage</th>
+                <th>Next Action</th>
+                <th>Owner</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredLeads.length === 0 ? (
+                <tr><td colSpan={7}><div className="empty-state"><Users size={40} /><p>No leads found</p></div></td></tr>
+              ) : filteredLeads.map((lead) => (
+                <tr key={lead.id}>
+                  <td>
+                    <div className="catalogue-product-title">{lead.company_name || 'Unlinked customer'}</div>
+                    <div className="catalogue-product-meta">
+                      <span className="font-mono text-sm text-accent">{lead.lead_number || lead.id.slice(0, 8)}</span>
+                      <span>{lead.industry || 'No industry'}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div>{lead.contact_person || '-'}</div>
+                    <div className="text-muted text-sm" style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                      {lead.phone && <span><Phone size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />{lead.phone}</span>}
+                      {lead.email && <span><Mail size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />{lead.email}</span>}
+                    </div>
+                  </td>
+                  <td>
+                    <strong>{formatCurrency(lead.value || 0, currency)}</strong>
+                    <div className="text-muted text-sm">{Number(lead.probability || 0)}% probability</div>
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <span className="badge" style={{ color: getStatusColor(lead.status), background: `${getStatusColor(lead.status)}18` }}>
+                        {statusOptions.find((status) => status.value === lead.status)?.label || lead.status}
+                      </span>
+                      <span className="badge" style={{ color: getPriorityColor(lead.priority), background: `${getPriorityColor(lead.priority)}18` }}>
+                        {lead.priority || 'medium'}
+                      </span>
+                    </div>
+                  </td>
+                  <td>
+                    <div><Calendar size={13} style={{ verticalAlign: 'middle', marginRight: 4 }} />{lead.next_followup_date || lead.expected_close_date || '-'}</div>
+                    <div className="text-muted text-sm">Last: {lead.last_contact || 'Never'}</div>
+                  </td>
+                  <td>{lead.assigned_user || lead.assigned_to || getOwnerName(currentUser) || '-'}</td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button className="btn btn-secondary btn-icon btn-sm" onClick={() => openEditor(lead)} title="Edit"><Edit size={14} /></button>
+                      <button className="btn btn-danger btn-icon btn-sm" onClick={() => closeLead(lead)} title="Close lost"><Trash2 size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {/* Create/Edit Modal */}
       {showCreateModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            background: 'var(--bg-primary)',
-            border: '1px solid var(--border)',
-            borderRadius: 12,
-            padding: 24,
-            width: '800px',
-            maxWidth: '90vw',
-            maxHeight: '90vh',
-            overflow: 'auto'
-          }}>
-            <h3 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', marginBottom: 20 }}>
-              {editingLead ? 'Edit Lead' : 'Create New Lead'}
-            </h3>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div className="modal-overlay" onClick={(event) => event.target === event.currentTarget && closeEditor()}>
+          <div className="modal modal-xl">
+            <div className="modal-header">
               <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>
-                  Company Name *
-                </label>
-                <input
-                  type="text"
-                  value={newLead.company_name}
-                  onChange={e => setNewLead({...newLead, company_name: e.target.value})}
-                  placeholder="Enter company name"
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    border: '1px solid var(--border)',
-                    borderRadius: 6,
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text)',
-                    fontSize: 14
-                  }}
-                />
+                <h3>{editingLead ? 'Edit Lead' : 'Create Lead'}</h3>
+                <div className="text-secondary text-sm" style={{ marginTop: 4 }}>Create one customer master, one active lead, and an optional first follow-up.</div>
+              </div>
+              <button className="close-btn" onClick={closeEditor}>x</button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {error && <div className="catalogue-form-alert"><span>{error}</span></div>}
+              <div className="catalogue-form-section">
+                <div className="catalogue-form-section-header"><h4>Customer</h4><span>Duplicate checks use phone and email before creating a new contact.</span></div>
+                <div className="grid-2">
+                  <div className="form-group"><label className="form-label">Company Name *</label><input className="form-control" value={form.company_name} onChange={(e) => updateField('company_name', e.target.value)} autoFocus /></div>
+                  <div className="form-group"><label className="form-label">Contact Person *</label><input className="form-control" value={form.contact_person} onChange={(e) => updateField('contact_person', e.target.value)} /></div>
+                </div>
+                <div className="grid-2">
+                  <div className="form-group"><label className="form-label">Phone</label><input className="form-control" value={form.phone} onChange={(e) => updateField('phone', e.target.value)} /></div>
+                  <div className="form-group"><label className="form-label">Email</label><input className="form-control" type="email" value={form.email} onChange={(e) => updateField('email', e.target.value)} /></div>
+                </div>
+                <div className="form-group"><label className="form-label">Address</label><input className="form-control" value={form.address} onChange={(e) => updateField('address', e.target.value)} /></div>
+                <div className="grid-2">
+                  <div className="form-group"><label className="form-label">City</label><input className="form-control" value={form.city} onChange={(e) => updateField('city', e.target.value)} /></div>
+                  <div className="form-group"><label className="form-label">State</label><input className="form-control" value={form.state} onChange={(e) => updateField('state', e.target.value)} /></div>
+                </div>
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>
-                  Contact Person *
-                </label>
-                <input
-                  type="text"
-                  value={newLead.contact_person}
-                  onChange={e => setNewLead({...newLead, contact_person: e.target.value})}
-                  placeholder="Enter contact person name"
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    border: '1px solid var(--border)',
-                    borderRadius: 6,
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text)',
-                    fontSize: 14
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>
-                  Email *
-                </label>
-                <input
-                  type="email"
-                  value={newLead.email}
-                  onChange={e => setNewLead({...newLead, email: e.target.value})}
-                  placeholder="Enter email address"
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    border: '1px solid var(--border)',
-                    borderRadius: 6,
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text)',
-                    fontSize: 14
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>
-                  Phone *
-                </label>
-                <input
-                  type="tel"
-                  value={newLead.phone}
-                  onChange={e => setNewLead({...newLead, phone: e.target.value})}
-                  placeholder="Enter phone number"
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    border: '1px solid var(--border)',
-                    borderRadius: 6,
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text)',
-                    fontSize: 14
-                  }}
-                />
-              </div>
-
-              <div style={{ gridColumn: 'span 2' }}>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>
-                  Address
-                </label>
-                <input
-                  type="text"
-                  value={newLead.address}
-                  onChange={e => setNewLead({...newLead, address: e.target.value})}
-                  placeholder="Enter address"
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    border: '1px solid var(--border)',
-                    borderRadius: 6,
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text)',
-                    fontSize: 14
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>
-                  City
-                </label>
-                <input
-                  type="text"
-                  value={newLead.city}
-                  onChange={e => setNewLead({...newLead, city: e.target.value})}
-                  placeholder="Enter city"
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    border: '1px solid var(--border)',
-                    borderRadius: 6,
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text)',
-                    fontSize: 14
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>
-                  State
-                </label>
-                <input
-                  type="text"
-                  value={newLead.state}
-                  onChange={e => setNewLead({...newLead, state: e.target.value})}
-                  placeholder="Enter state"
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    border: '1px solid var(--border)',
-                    borderRadius: 6,
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text)',
-                    fontSize: 14
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>
-                  Pincode
-                </label>
-                <input
-                  type="text"
-                  value={newLead.pincode}
-                  onChange={e => setNewLead({...newLead, pincode: e.target.value})}
-                  placeholder="Enter pincode"
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    border: '1px solid var(--border)',
-                    borderRadius: 6,
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text)',
-                    fontSize: 14
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>
-                  Industry
-                </label>
-                <select
-                  value={newLead.industry}
-                  onChange={e => setNewLead({...newLead, industry: e.target.value})}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    border: '1px solid var(--border)',
-                    borderRadius: 6,
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text)',
-                    fontSize: 14
-                  }}
-                >
-                  <option value="">Select Industry</option>
-                  {industryOptions.map(industry => (
-                    <option key={industry} value={industry}>{industry}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>
-                  Lead Source
-                </label>
-                <select
-                  value={newLead.source}
-                  onChange={e => setNewLead({...newLead, source: e.target.value})}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    border: '1px solid var(--border)',
-                    borderRadius: 6,
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text)',
-                    fontSize: 14
-                  }}
-                >
-                  {sourceOptions.map(source => (
-                    <option key={source.value} value={source.value}>{source.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>
-                  Deal Value (₹)
-                </label>
-                <input
-                  type="number"
-                  value={newLead.value}
-                  onChange={e => setNewLead({...newLead, value: e.target.value})}
-                  placeholder="Enter deal value"
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    border: '1px solid var(--border)',
-                    borderRadius: 6,
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text)',
-                    fontSize: 14
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>
-                  Probability (%)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={newLead.probability}
-                  onChange={e => setNewLead({...newLead, probability: parseInt(e.target.value) || 0})}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    border: '1px solid var(--border)',
-                    borderRadius: 6,
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text)',
-                    fontSize: 14
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>
-                  Status
-                </label>
-                <select
-                  value={newLead.status}
-                  onChange={e => setNewLead({...newLead, status: e.target.value})}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    border: '1px solid var(--border)',
-                    borderRadius: 6,
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text)',
-                    fontSize: 14
-                  }}
-                >
-                  {statusOptions.map(status => (
-                    <option key={status.value} value={status.value}>{status.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>
-                  Priority
-                </label>
-                <select
-                  value={newLead.priority}
-                  onChange={e => setNewLead({...newLead, priority: e.target.value})}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    border: '1px solid var(--border)',
-                    borderRadius: 6,
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text)',
-                    fontSize: 14
-                  }}
-                >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                </select>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>
-                  Expected Close Date
-                </label>
-                <input
-                  type="date"
-                  value={newLead.expected_close_date}
-                  onChange={e => setNewLead({...newLead, expected_close_date: e.target.value})}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    border: '1px solid var(--border)',
-                    borderRadius: 6,
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text)',
-                    fontSize: 14
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>
-                  Assigned To
-                </label>
-                <input
-                  type="text"
-                  value={newLead.assigned_to}
-                  onChange={e => setNewLead({...newLead, assigned_to: e.target.value})}
-                  placeholder="Assign to sales rep"
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    border: '1px solid var(--border)',
-                    borderRadius: 6,
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text)',
-                    fontSize: 14
-                  }}
-                />
-              </div>
-
-              <div style={{ gridColumn: 'span 2' }}>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>
-                  Notes
-                </label>
-                <textarea
-                  value={newLead.notes}
-                  onChange={e => setNewLead({...newLead, notes: e.target.value})}
-                  placeholder="Additional notes about the lead"
-                  rows={3}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    border: '1px solid var(--border)',
-                    borderRadius: 6,
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text)',
-                    fontSize: 14,
-                    resize: 'vertical'
-                  }}
-                />
+              <div className="catalogue-form-section">
+                <div className="catalogue-form-section-header"><h4>Opportunity</h4><span>Status, value, probability, and owner drive pipeline and performance dashboards.</span></div>
+                <div className="grid-3">
+                  <div className="form-group"><label className="form-label">Source</label><select className="form-control" value={form.lead_source} onChange={(e) => updateField('lead_source', e.target.value)}>{sourceOptions.map((source) => <option key={source.value} value={source.value}>{source.label}</option>)}</select></div>
+                  <div className="form-group"><label className="form-label">Industry</label><select className="form-control" value={form.industry} onChange={(e) => updateField('industry', e.target.value)}><option value="">Select industry</option>{industryOptions.map((industry) => <option key={industry} value={industry}>{industry}</option>)}</select></div>
+                  <div className="form-group"><label className="form-label">Value</label><input className="form-control" type="number" min="0" step="0.01" value={form.value} onChange={(e) => updateField('value', e.target.value)} /></div>
+                </div>
+                <div className="grid-3">
+                  <div className="form-group"><label className="form-label">Probability %</label><input className="form-control" type="number" min="0" max="100" value={form.probability} onChange={(e) => updateField('probability', e.target.value)} /></div>
+                  <div className="form-group"><label className="form-label">Status</label><select className="form-control" value={form.status} onChange={(e) => updateField('status', e.target.value)}>{statusOptions.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}</select></div>
+                  <div className="form-group"><label className="form-label">Priority</label><select className="form-control" value={form.priority} onChange={(e) => updateField('priority', e.target.value)}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
+                </div>
+                <div className="grid-3">
+                  <div className="form-group"><label className="form-label">Expected Close</label><input className="form-control" type="date" value={form.expected_close_date} onChange={(e) => updateField('expected_close_date', e.target.value)} /></div>
+                  <div className="form-group"><label className="form-label">First Follow-up</label><input className="form-control" type="date" min={today()} value={form.next_followup_date} onChange={(e) => updateField('next_followup_date', e.target.value)} /></div>
+                  <div className="form-group"><label className="form-label">Owner</label><select className="form-control" value={form.assigned_to} onChange={(e) => updateField('assigned_to', e.target.value)}><option value="">Unassigned</option>{users.map((user) => <option key={user.id} value={user.id}>{user.full_name || user.username}</option>)}</select></div>
+                </div>
+                <div className="form-group"><label className="form-label">Notes</label><textarea className="form-control" rows={3} value={form.notes} onChange={(e) => updateField('notes', e.target.value)} /></div>
               </div>
             </div>
-
-            <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-              <button
-                onClick={saveLead}
-                style={{
-                  background: 'var(--accent)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 8,
-                  padding: '12px 20px',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: 'pointer'
-                }}
-              >
-                {editingLead ? 'Update Lead' : 'Create Lead'}
-              </button>
-              <button
-                onClick={() => {
-                  setShowCreateModal(false);
-                  setEditingLead(null);
-                  resetForm();
-                }}
-                style={{
-                  background: 'var(--bg-secondary)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 8,
-                  padding: '12px 20px',
-                  fontSize: 14,
-                  cursor: 'pointer'
-                }}
-              >
-                Cancel
-              </button>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" onClick={closeEditor}>Cancel</button>
+              <button type="button" className="btn btn-primary" onClick={saveLead}>{editingLead ? 'Update Lead' : 'Create Lead'}</button>
             </div>
           </div>
         </div>
       )}
     </div>
   );
-};
-
-export default LeadsView;
+}

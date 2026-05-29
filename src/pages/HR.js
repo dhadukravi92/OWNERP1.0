@@ -2233,7 +2233,7 @@ export default function HR() {
                   <div style={{ border: '1px solid var(--border)', borderRadius: 14, padding: 14, background: 'var(--bg-secondary)' }}>
                     <div className="catalogue-summary-title">How It Works</div>
                     <div className="text-secondary text-sm" style={{ marginTop: 6, lineHeight: 1.7 }}>
-                      Keep the OWNERP desktop app open on the main PC, connect phones to the same local Wi-Fi, open the Wi-Fi IP shown here, and sign in using the employee&apos;s normal login.
+                      Keep the OwnERP desktop app open on the main PC, connect phones to the same local Wi-Fi, open the Wi-Fi IP shown here, and sign in using the employee&apos;s normal login.
                     </div>
                   </div>
                 </div>

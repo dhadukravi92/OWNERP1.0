@@ -86,7 +86,7 @@ function enrichMaterial(products, materialId, existing = {}) {
 
 function BOMModal({ bom, products, currencySymbol, onClose, onSave }) {
   const [form, setForm] = useState(
-    bom || { name: '', product_id: '', version: '1.0', description: '' }
+    bom || { code: '', name: '', product_id: '', version: '1.0', description: '' }
   );
   const [items, setItems] = useState([]);
   const [error, setError] = useState('');
@@ -130,13 +130,6 @@ function BOMModal({ bom, products, currencySymbol, onClose, onSave }) {
       active = false;
     };
   }, [bom?.id]);
-
-  useEffect(() => {
-    if (form.name || !form.product_id) return;
-    const product = products.find((item) => item.id === form.product_id);
-    if (!product) return;
-    setForm((prev) => ({ ...prev, name: `${product.name} BOM` }));
-  }, [form.product_id, form.name, products]);
 
   const finishedProduct = products.find((item) => item.id === form.product_id) || null;
   const productOptions = products.map((product) => ({
@@ -183,12 +176,18 @@ function BOMModal({ bom, products, currencySymbol, onClose, onSave }) {
     e.preventDefault();
 
     const trimmedName = form.name.trim();
+    const trimmedCode = `${form.code || ''}`.trim();
     const validItems = items.filter((item) => item.material_id);
     const materialIds = validItems.map((item) => item.material_id);
     const hasDuplicates = new Set(materialIds).size !== materialIds.length;
 
     if (!trimmedName) {
       setError('BOM name is required.');
+      return;
+    }
+
+    if (!trimmedCode) {
+      setError('BOM code is required.');
       return;
     }
 
@@ -211,16 +210,26 @@ function BOMModal({ bom, products, currencySymbol, onClose, onSave }) {
 
     let bomId = bom?.id;
     if (bomId) {
+      const duplicate = await db.get('SELECT id FROM bom WHERE LOWER(code)=LOWER(?) AND id<>? AND is_active=1', [trimmedCode, bomId]);
+      if (duplicate?.id) {
+        setError('Another active BOM already uses this BOM code.');
+        return;
+      }
       await db.run(
-        'UPDATE bom SET name=?,product_id=?,version=?,description=? WHERE id=?',
-        [trimmedName, form.product_id, form.version, form.description, bomId]
+        'UPDATE bom SET code=?,name=?,product_id=?,version=?,description=? WHERE id=?',
+        [trimmedCode, trimmedName, form.product_id, form.version, form.description, bomId]
       );
       await db.run('DELETE FROM bom_items WHERE bom_id=?', [bomId]);
     } else {
+      const duplicate = await db.get('SELECT id FROM bom WHERE LOWER(code)=LOWER(?) AND is_active=1', [trimmedCode]);
+      if (duplicate?.id) {
+        setError('Another active BOM already uses this BOM code.');
+        return;
+      }
       bomId = generateId();
       await db.run(
-        'INSERT INTO bom (id,name,product_id,version,description) VALUES (?,?,?,?,?)',
-        [bomId, trimmedName, form.product_id, form.version, form.description]
+        'INSERT INTO bom (id,code,name,product_id,version,description) VALUES (?,?,?,?,?,?)',
+        [bomId, trimmedCode, trimmedName, form.product_id, form.version, form.description]
       );
     }
 
@@ -298,6 +307,16 @@ function BOMModal({ bom, products, currencySymbol, onClose, onSave }) {
                 <span>ERP-grade BOMs should clearly connect a finished product, revision, and engineering intent.</span>
               </div>
               <div className="grid-3">
+                <div className="form-group">
+                  <label className="form-label">BOM Code *</label>
+                  <input
+                    className="form-control"
+                    value={form.code || ''}
+                    onChange={(e) => setForm((prev) => ({ ...prev, code: e.target.value.toUpperCase() }))}
+                    required
+                    placeholder="e.g. BOM-DP-63A"
+                  />
+                </div>
                 <div className="form-group">
                   <label className="form-label">BOM Name *</label>
                   <input
@@ -499,7 +518,8 @@ export default function BOMPro() {
       const items = itemMap[bom.id] || [];
       const summary = summarizeBom(items, bom);
       const searchHaystack = [
-        bom.name,
+                  bom.code,
+                  bom.name,
         bom.product_name,
         bom.product_code,
         bom.version,
@@ -575,16 +595,16 @@ export default function BOMPro() {
         <div className="catalogue-hero-main">
           <div className="catalogue-hero-kicker">
             <Sparkles size={14} />
-            <span>Manufacturing structure workspace</span>
+            <span>Operational structure workspace</span>
           </div>
           <h3>Design BOMs with cost, revision, and component readiness in view.</h3>
           <p>
-            Leading ERP manufacturing modules treat BOMs as controlled business objects: versioned, analyzable, and connected to component availability before production starts.
+            Leading ERP operations modules treat BOMs as controlled business objects: versioned, analyzable, and connected to component availability before work starts.
           </p>
           <div className="catalogue-chip-row">
             <span className="catalogue-chip">Version control for engineering changes</span>
             <span className="catalogue-chip">Live material risk visibility</span>
-            <span className="catalogue-chip">Cost rollup before manufacturing</span>
+            <span className="catalogue-chip">Cost rollup before execution</span>
           </div>
         </div>
         <div className="catalogue-hero-side">
@@ -706,7 +726,7 @@ export default function BOMPro() {
                       <div>
                         <div className="catalogue-product-title">{bom.name}</div>
                         <div className="catalogue-product-meta">
-                          <span className="font-mono text-sm text-accent">{bom.id?.slice(0, 8)}</span>
+                          <span className="font-mono text-sm text-accent">{bom.code || bom.id?.slice(0, 8)}</span>
                           <span>{bom.description ? bom.description.substring(0, 42) : 'No description'}</span>
                         </div>
                       </div>

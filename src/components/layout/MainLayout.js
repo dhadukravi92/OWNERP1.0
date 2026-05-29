@@ -4,9 +4,10 @@ import { useAppStore } from '../../store/appStore';
 import { getAppBrandLogoUrl, getErpNameParts } from '../../utils/branding';
 import { formatMainMenuShortcut, getAccessibleModules, getMainMenuShortcutMap } from '../../utils/modules';
 import { getVisibleHelpArticles, searchHelpArticles } from '../../utils/helpContent';
+import { APP_THEMES, getThemeMeta, getThemeMode } from '../../utils/themes';
 import {
   Sun, Moon, LogOut, Zap, ChevronLeft, ChevronRight,
-  AlertTriangle, HelpCircle, Search, X
+  AlertTriangle, HelpCircle, Search, X, Palette, Check
 } from 'lucide-react';
 
 function getMainMenuHotkeySignature(event) {
@@ -17,16 +18,19 @@ function getMainMenuHotkeySignature(event) {
 export default function MainLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { currentUser, logout, theme, toggleTheme, notifications, loadNotifications, dashboardStats, loadDashboardStats, settings } = useAppStore();
+  const { currentUser, logout, theme, setTheme, toggleTheme, notifications, loadNotifications, dashboardStats, loadDashboardStats, settings } = useAppStore();
   const [collapsed, setCollapsed] = useState(false);
   const [logoLoadFailed, setLogoLoadFailed] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [helpQuery, setHelpQuery] = useState('');
   const [activeHelpId, setActiveHelpId] = useState('');
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
   const logoUrl = getAppBrandLogoUrl();
   const erpNameParts = getErpNameParts(settings);
+  const activeTheme = getThemeMeta(theme);
+  const themeMode = getThemeMode(theme);
   const navItems = getAccessibleModules(currentUser, settings);
   const shortcutMap = useMemo(() => getMainMenuShortcutMap(settings), [settings]);
   const navItemsWithHotkeys = useMemo(
@@ -123,13 +127,21 @@ export default function MainLayout() {
     return () => window.removeEventListener('keydown', handleEscape);
   }, [helpOpen]);
 
+  useEffect(() => {
+    if (!collapsed) return undefined;
+
+    const closeThemePicker = () => setThemePickerOpen(false);
+    window.addEventListener('resize', closeThemePicker);
+    return () => window.removeEventListener('resize', closeThemePicker);
+  }, [collapsed]);
+
   const isActive = (item) => {
     if (item.exact) return location.pathname === item.path;
     return location.pathname.startsWith(item.path);
   };
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', height: '100dvh', minHeight: 0, overflow: 'hidden' }}>
       {/* Sidebar */}
       <aside style={{
         width: collapsed ? 60 : 220,
@@ -326,24 +338,107 @@ export default function MainLayout() {
           
           <div style={{ display: 'flex', gap: 4, justifyContent: collapsed ? 'center' : 'flex-end' }}>
             <button
+              onClick={() => setThemePickerOpen((open) => !open)}
+              className="btn btn-secondary btn-icon btn-sm"
+              title="Theme selection"
+            >
+              <Palette size={14} />
+            </button>
+            <button
               onClick={() => setHelpOpen(true)}
               className="btn btn-secondary btn-icon btn-sm"
               title="Help"
             >
               <HelpCircle size={14} />
             </button>
-            <button onClick={toggleTheme} className="btn btn-secondary btn-icon btn-sm" title="Toggle theme">
-              {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+            <button onClick={toggleTheme} className="btn btn-secondary btn-icon btn-sm" title="Toggle day and night mode">
+              {themeMode === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
             </button>
             <button onClick={logout} className="btn btn-danger btn-icon btn-sm" title="Logout">
               <LogOut size={14} />
             </button>
           </div>
         </div>
+
+        {themePickerOpen && (
+          <div
+            style={{
+              position: 'absolute',
+              left: collapsed ? 12 : 12,
+              right: collapsed ? -276 : 12,
+              bottom: 72,
+              padding: 12,
+              borderRadius: 18,
+              border: '1px solid var(--border)',
+              background: 'var(--bg-card)',
+              boxShadow: 'var(--shadow)',
+              zIndex: 30,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10
+            }}
+          >
+            <div>
+              <div className="catalogue-summary-title">Personal Theme</div>
+              <strong style={{ display: 'block', marginTop: 6, fontSize: 16 }}>{activeTheme.name}</strong>
+              <div className="text-secondary text-sm" style={{ marginTop: 4 }}>{activeTheme.description}</div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {APP_THEMES.map((option) => {
+                const selected = option.id === theme;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => {
+                      setTheme(option.id);
+                      setThemePickerOpen(false);
+                    }}
+                    style={{
+                      width: '100%',
+                      display: 'grid',
+                      gridTemplateColumns: 'auto minmax(0, 1fr) auto',
+                      alignItems: 'center',
+                      gap: 12,
+                      padding: '10px 12px',
+                      borderRadius: 14,
+                      border: `1px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
+                      background: selected ? 'var(--accent-dim)' : 'var(--bg-secondary)',
+                      color: 'var(--text-primary)',
+                      cursor: 'pointer',
+                      textAlign: 'left'
+                    }}
+                  >
+                    <div style={{ display: 'flex', gap: 5 }}>
+                      {option.swatches.map((swatch) => (
+                        <span
+                          key={swatch}
+                          style={{
+                            width: 14,
+                            height: 14,
+                            borderRadius: 999,
+                            background: swatch,
+                            border: '1px solid rgba(255,255,255,0.2)'
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{option.name}</div>
+                      <div className="text-secondary text-sm" style={{ marginTop: 2 }}>{option.mode === 'dark' ? 'Night mode' : 'Day mode'}</div>
+                    </div>
+                    {selected ? <Check size={14} color="var(--accent)" /> : null}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </aside>
 
       {/* Main content */}
-      <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <main style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <Outlet />
       </main>
 
@@ -392,7 +487,7 @@ export default function MainLayout() {
                   Help Center
                 </div>
                 <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.03em' }}>
-                  Search OWNERP Help
+                  Search OwnERP Help
                 </div>
                 <div className="text-secondary" style={{ fontSize: 13, marginTop: 4 }}>
                   Search topics, modules, forms, backup setup, and operating instructions. Press <span className="font-mono">F1</span> anytime.

@@ -39,9 +39,9 @@ const CommunicationIntegration = () => {
       provider: 'smtp',
       smtp_host: 'smtp.gmail.com',
       smtp_port: 587,
-      smtp_user: 'crm@panelerp.com',
+      smtp_user: 'crm@ownerp.com',
       smtp_pass: '••••••••',
-      from_email: 'crm@panelerp.com',
+      from_email: 'crm@ownerp.com',
       from_name: `${erpName} CRM`
     };
     const mockSmsSettings = {

@@ -63,8 +63,48 @@ const maskAccountNumber = (value) => {
   return `${'*'.repeat(Math.max(clean.length - 4, 0))}${clean.slice(-4)}`;
 };
 
+// Validate GST Number format
+// Format: 24AAIFU8887D1ZP (2 numeric + 10 alphanumeric + 1 numeric + 2 alphanumeric)
+const validateGSTNumber = (gstNumber) => {
+  const clean = `${gstNumber || ''}`.toUpperCase().trim();
+  if (!clean) return { valid: false, error: 'GST Number is required' };
+  
+  // Check if it's exactly 15 characters
+  if (clean.length !== 15) {
+    return { valid: false, error: 'GST Number must be exactly 15 characters' };
+  }
+  
+  // Check if contains only alphanumeric characters
+  if (!/^[A-Z0-9]+$/.test(clean)) {
+    return { valid: false, error: 'GST Number must contain only letters and digits' };
+  }
+  
+  // Check first 2 characters are numeric (state code)
+  if (!/^\d{2}/.test(clean)) {
+    return { valid: false, error: 'First 2 characters must be numeric (state code)' };
+  }
+  
+  // Check positions 3-12 (0-indexed: 2-11) are alphanumeric (they should be, already checked above)
+  
+  // Check positions 8-11 (0-indexed: 7-10) are numeric
+  const pos8to11 = clean.substring(7, 11);
+  if (!/^\d{4}$/.test(pos8to11)) {
+    return { valid: false, error: 'Positions 8-11 must be numeric (Format: 24AAIFU8887D1ZP)' };
+  }
+  
+  // Check position 13 (0-indexed: 12) is numeric
+  if (!/^\d$/.test(clean[12])) {
+    return { valid: false, error: 'Position 13 must be numeric (Format: 24AAIFU8887D1ZP)' };
+  }
+  
+  // Check positions 14-15 (0-indexed: 13-14) are alphanumeric (already verified above)
+  
+  return { valid: true, error: '' };
+};
+
 function ContactModal({ contact, onClose, onSave }) {
   const [form, setForm] = useState({ ...CONTACT_DEFAULTS, ...(contact || {}) });
+  const [validationErrors, setValidationErrors] = useState({});
   const f = (field, val) => setForm((prev) => ({ ...prev, [field]: val }));
 
   const hasBankingDetails = Boolean(
@@ -80,6 +120,41 @@ function ContactModal({ contact, onClose, onSave }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Clear previous errors
+    const errors = {};
+    
+    // Validate Contact Name (required)
+    if (!`${form.name || ''}`.trim()) {
+      errors.name = 'Contact Name is required';
+    }
+    
+    // Validate Company Name (required)
+    if (!`${form.company || ''}`.trim()) {
+      errors.company = 'Company Name is required';
+    }
+    
+    // Validate Address (required and minimum 50 characters)
+    const addressTrim = `${form.address || ''}`.trim();
+    if (!addressTrim) {
+      errors.address = 'Address is required';
+    } else if (addressTrim.length < 50) {
+      errors.address = `Address must be at least 50 characters (${addressTrim.length}/50)`;
+    }
+    
+    // Validate GST Number (required with specific format)
+    const gstValidation = validateGSTNumber(form.gst_number);
+    if (!gstValidation.valid) {
+      errors.gst_number = gstValidation.error;
+    }
+    
+    // If there are validation errors, display them and prevent submission
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors(errors);
+      return;
+    }
+    
+    setValidationErrors({});
 
     const payload = [
       form.type,
@@ -195,11 +270,13 @@ function ContactModal({ contact, onClose, onSave }) {
               <div className="grid-2">
                 <div className="form-group">
                   <label className="form-label">Contact Name *</label>
-                  <input className="form-control" value={form.name} onChange={(e) => f('name', e.target.value)} required />
+                  <input className={`form-control ${validationErrors.name ? 'error' : ''}`} value={form.name} onChange={(e) => { f('name', e.target.value); if (validationErrors.name) setValidationErrors({ ...validationErrors, name: '' }); }} required />
+                  {validationErrors.name && <div style={{ fontSize: 12, color: '#ef4444', marginTop: 4 }}>{validationErrors.name}</div>}
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Company Name</label>
-                  <input className="form-control" value={form.company} onChange={(e) => f('company', e.target.value)} />
+                  <label className="form-label">Company Name *</label>
+                  <input className={`form-control ${validationErrors.company ? 'error' : ''}`} value={form.company} onChange={(e) => { f('company', e.target.value); if (validationErrors.company) setValidationErrors({ ...validationErrors, company: '' }); }} />
+                  {validationErrors.company && <div style={{ fontSize: 12, color: '#ef4444', marginTop: 4 }}>{validationErrors.company}</div>}
                 </div>
               </div>
 
@@ -215,8 +292,9 @@ function ContactModal({ contact, onClose, onSave }) {
               </div>
 
               <div className="form-group">
-                <label className="form-label">Address</label>
-                <textarea className="form-control" value={form.address} onChange={(e) => f('address', e.target.value)} rows={2} />
+                <label className="form-label">Address * <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>(minimum 50 characters)</span></label>
+                <textarea className={`form-control ${validationErrors.address ? 'error' : ''}`} value={form.address} onChange={(e) => { f('address', e.target.value); if (validationErrors.address) setValidationErrors({ ...validationErrors, address: '' }); }} rows={2} />
+                {validationErrors.address && <div style={{ fontSize: 12, color: '#ef4444', marginTop: 4 }}>{validationErrors.address}</div>}
               </div>
 
               <div className="grid-3">
@@ -242,8 +320,19 @@ function ContactModal({ contact, onClose, onSave }) {
               </div>
               <div className="grid-2">
                 <div className="form-group">
-                  <label className="form-label">GST Number</label>
-                  <input className="form-control" value={form.gst_number} onChange={(e) => f('gst_number', e.target.value)} placeholder="15-digit GSTIN" />
+                  <label className="form-label">GST Number * <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>(15 characters: e.g., 24AAIFU8887D1ZP)</span></label>
+                  <input 
+                    className={`form-control ${validationErrors.gst_number ? 'error' : ''}`} 
+                    value={form.gst_number} 
+                    onChange={(e) => { 
+                      const val = e.target.value.replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 15);
+                      f('gst_number', val);
+                      if (validationErrors.gst_number) setValidationErrors({ ...validationErrors, gst_number: '' }); 
+                    }} 
+                    placeholder="e.g., 24AAIFU8887D1ZP" 
+                    maxLength="15"
+                  />
+                  {validationErrors.gst_number && <div style={{ fontSize: 12, color: '#ef4444', marginTop: 4 }}>{validationErrors.gst_number}</div>}
                 </div>
                 <div className="form-group">
                   <label className="form-label">PAN Number</label>
@@ -429,7 +518,7 @@ export default function Contacts() {
       <div className="page-header">
         <div className="page-title">
           <h2>Contacts</h2>
-          <span className="page-subtitle">{summary.customers} customers · {summary.vendors} vendors</span>
+          <span className="page-subtitle">{summary.customers} customers ï¿½ {summary.vendors} vendors</span>
         </div>
         <button className="btn btn-primary" onClick={() => setModal({})}><Plus size={15} /> Add Contact</button>
       </div>

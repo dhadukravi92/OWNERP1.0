@@ -1,51 +1,54 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Calendar, Mail, Phone, Plus } from 'lucide-react';
+import db, { formatCurrency } from '../../utils/database';
 import { useAppStore } from '../../store/appStore';
-import { Plus, MoreVertical, User, Calendar, Phone, Mail } from 'lucide-react';
 
-const LeadPipeline = () => {
-  const { createLead, scheduleFollowup } = useAppStore();
+const stages = [
+  { id: 'new', label: 'New', color: '#6366f1' },
+  { id: 'contacted', label: 'Contacted', color: '#8b5cf6' },
+  { id: 'qualified', label: 'Qualified', color: '#06b6d4' },
+  { id: 'proposal', label: 'Proposal', color: '#10b981' },
+  { id: 'negotiation', label: 'Negotiation', color: '#f59e0b' },
+  { id: 'closed_won', label: 'Closed Won', color: '#22c55e' },
+  { id: 'closed_lost', label: 'Closed Lost', color: '#ef4444' }
+];
+
+export default function LeadPipeline() {
+  const { settings } = useAppStore();
   const [leads, setLeads] = useState([]);
+  const currency = settings?.currency_symbol || '\u20B9';
 
-  // Mock data - in real app, this would come from database
   useEffect(() => {
-    setLeads([
-      {
-        id: '1',
-        lead_number: 'LEAD-001',
-        customer_name: 'Rajesh Kumar',
-        company: 'ABC Industries',
-        value: 150000,
-        status: 'new',
-        probability: 20,
-        expected_close_date: '2024-02-15',
-        last_activity: '2024-01-15'
-      },
-      {
-        id: '2',
-        lead_number: 'LEAD-002',
-        customer_name: 'Priya Sharma',
-        company: 'XYZ Corp',
-        value: 250000,
-        status: 'qualified',
-        probability: 60,
-        expected_close_date: '2024-01-30',
-        last_activity: '2024-01-14'
-      }
-    ]);
+    loadLeads();
   }, []);
 
-  const stages = [
-    { id: 'new', label: 'New', color: '#6366f1' },
-    { id: 'contacted', label: 'Contacted', color: '#8b5cf6' },
-    { id: 'qualified', label: 'Qualified', color: '#06b6d4' },
-    { id: 'proposal', label: 'Proposal', color: '#10b981' },
-    { id: 'negotiation', label: 'Negotiation', color: '#f59e0b' },
-    { id: 'closed_won', label: 'Closed Won', color: '#22c55e' },
-    { id: 'closed_lost', label: 'Closed Lost', color: '#ef4444' }
-  ];
+  const loadLeads = async () => {
+    const rows = await db.all(`
+      SELECT l.*, c.name AS customer_name, c.company, c.email, c.phone,
+        MAX(f.scheduled_date) AS next_followup_date
+      FROM crm_leads l
+      LEFT JOIN contacts c ON c.id = l.customer_id
+      LEFT JOIN crm_followups f ON f.lead_id = l.id AND f.actual_date IS NULL
+      GROUP BY l.id
+      ORDER BY datetime(l.updated_at) DESC, datetime(l.created_at) DESC
+    `);
+    setLeads(rows || []);
+  };
 
-  const getLeadsByStage = (stageId) => {
-    return leads.filter(lead => lead.status === stageId);
+  const totalsByStage = useMemo(() => {
+    return stages.reduce((acc, stage) => {
+      const rows = leads.filter((lead) => lead.status === stage.id);
+      acc[stage.id] = {
+        count: rows.length,
+        value: rows.reduce((sum, lead) => sum + Number(lead.value || 0), 0)
+      };
+      return acc;
+    }, {});
+  }, [leads]);
+
+  const updateStage = async (lead, status) => {
+    await db.run('UPDATE crm_leads SET status=?, updated_at=datetime("now") WHERE id=?', [status, lead.id]);
+    await loadLeads();
   };
 
   const LeadCard = ({ lead }) => (
@@ -53,83 +56,28 @@ const LeadPipeline = () => {
       background: 'var(--bg-primary)',
       border: '1px solid var(--border)',
       borderRadius: 8,
-      padding: 16,
-      marginBottom: 12,
-      cursor: 'pointer',
-      transition: 'all 0.2s ease'
-    }}
-    onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
-    onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>{lead.customer_name}</div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lead.company}</div>
+      padding: 14,
+      marginBottom: 12
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{lead.company || lead.customer_name || 'Unlinked lead'}</div>
+          <div className="text-muted text-sm">{lead.customer_name || lead.lead_number}</div>
         </div>
-        <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
-          <MoreVertical size={14} color="var(--text-muted)" />
-        </button>
+        <strong style={{ color: 'var(--success)', whiteSpace: 'nowrap' }}>{formatCurrency(lead.value || 0, currency)}</strong>
       </div>
-
-      <div style={{ marginBottom: 8 }}>
-        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--success)' }}>
-          {lead.value.toLocaleString()}
-        </span>
-      </div>
-
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <div style={{
-          width: 8,
-          height: 8,
-          borderRadius: '50%',
-          background: lead.probability > 50 ? 'var(--success)' : lead.probability > 25 ? 'var(--warning)' : 'var(--danger)'
-        }}></div>
-        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lead.probability}% probability</span>
+        <div style={{ width: 8, height: 8, borderRadius: '50%', background: Number(lead.probability || 0) >= 60 ? 'var(--success)' : Number(lead.probability || 0) >= 30 ? 'var(--warning)' : 'var(--danger)' }} />
+        <span className="text-muted text-sm">{Number(lead.probability || 0)}% probability</span>
       </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8 }}>
-        <Calendar size={12} color="var(--text-muted)" />
-        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-          Expected: {new Date(lead.expected_close_date).toLocaleDateString()}
-        </span>
+      <div className="text-muted text-sm" style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
+        <span><Calendar size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />{lead.next_followup_date || lead.expected_close_date || 'No date set'}</span>
+        {lead.phone && <span><Phone size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />{lead.phone}</span>}
+        {lead.email && <span><Mail size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />{lead.email}</span>}
       </div>
-
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button style={{
-          flex: 1,
-          background: 'var(--accent-dim)',
-          color: 'var(--accent)',
-          border: 'none',
-          borderRadius: 4,
-          padding: '6px 8px',
-          fontSize: 12,
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 4
-        }}>
-          <Phone size={12} />
-          Call
-        </button>
-        <button style={{
-          flex: 1,
-          background: 'var(--primary-dim)',
-          color: 'var(--primary)',
-          border: 'none',
-          borderRadius: 4,
-          padding: '6px 8px',
-          fontSize: 12,
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 4
-        }}>
-          <Mail size={12} />
-          Email
-        </button>
-      </div>
+      <select className="form-control" value={lead.status} onChange={(event) => updateStage(lead, event.target.value)}>
+        {stages.map((stage) => <option key={stage.id} value={stage.id}>{stage.label}</option>)}
+      </select>
     </div>
   );
 
@@ -138,115 +86,41 @@ const LeadPipeline = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8, color: 'var(--text)' }}>Lead Pipeline</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: 16 }}>Visualize and manage your sales pipeline</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: 16 }}>Live pipeline grouped from CRM lead records.</p>
         </div>
-        <button
-          onClick={() => {
-            // Open create lead modal
-          }}
-          style={{
-            background: 'var(--accent)',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 8,
-            padding: '12px 20px',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8
-          }}
-        >
-          <Plus size={16} />
-          Add Lead
-        </button>
+        <button className="btn btn-secondary" onClick={loadLeads}><Plus size={16} />Refresh Pipeline</button>
       </div>
 
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-        gap: 20,
+        gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))',
+        gap: 18,
         overflowX: 'auto',
         paddingBottom: 20
       }}>
-        {stages.map(stage => (
-          <div key={stage.id} style={{
-            background: 'var(--bg-secondary)',
-            border: '1px solid var(--border)',
-            borderRadius: 12,
-            padding: 16,
-            minHeight: 400
-          }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              marginBottom: 16,
-              paddingBottom: 12,
-              borderBottom: '1px solid var(--border)'
+        {stages.map((stage) => {
+          const rows = leads.filter((lead) => lead.status === stage.id);
+          return (
+            <div key={stage.id} style={{
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border)',
+              borderRadius: 12,
+              padding: 14,
+              minHeight: 360
             }}>
-              <div style={{
-                width: 12,
-                height: 12,
-                borderRadius: '50%',
-                background: stage.color
-              }}></div>
-              <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', margin: 0 }}>
-                {stage.label}
-              </h3>
-              <span style={{
-                background: 'var(--bg-primary)',
-                color: 'var(--text-muted)',
-                padding: '2px 6px',
-                borderRadius: 10,
-                fontSize: 12,
-                fontWeight: 600
-              }}>
-                {getLeadsByStage(stage.id).length}
-              </span>
-            </div>
-
-            <div>
-              {getLeadsByStage(stage.id).map(lead => (
-                <LeadCard key={lead.id} lead={lead} />
-              ))}
-
-              {getLeadsByStage(stage.id).length === 0 && (
-                <div style={{
-                  textAlign: 'center',
-                  padding: 32,
-                  color: 'var(--text-muted)',
-                  fontSize: 14
-                }}>
-                  No leads in this stage
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, paddingBottom: 12, borderBottom: '1px solid var(--border)' }}>
+                <div style={{ width: 12, height: 12, borderRadius: '50%', background: stage.color }} />
+                <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{stage.label}</h3>
+                <span className="badge badge-secondary">{totalsByStage[stage.id]?.count || 0}</span>
+              </div>
+              <div className="text-muted text-sm" style={{ marginBottom: 12 }}>{formatCurrency(totalsByStage[stage.id]?.value || 0, currency)} pipeline value</div>
+              {rows.length ? rows.map((lead) => <LeadCard key={lead.id} lead={lead} />) : (
+                <div style={{ textAlign: 'center', padding: 28, color: 'var(--text-muted)', fontSize: 14 }}>No leads in this stage</div>
               )}
             </div>
-
-            <button style={{
-              width: '100%',
-              background: 'none',
-              border: '1px dashed var(--border)',
-              borderRadius: 8,
-              padding: 12,
-              color: 'var(--text-muted)',
-              cursor: 'pointer',
-              fontSize: 14,
-              marginTop: 12,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8
-            }}>
-              <Plus size={16} />
-              Add Lead
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
-};
-
-export default LeadPipeline;
+}

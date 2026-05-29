@@ -1,0 +1,210 @@
+[
+  {
+    "code": "39174000",
+    "description": "Fittings for tubes, pipes and hoses, of plastics",
+    "chapter_code": "39",
+    "chapter_title": "Plastics and articles thereof",
+    "gst_rate": 18,
+    "keywords": ["plastic fittings", "pipe fittings", "pvc accessories"]
+  },
+  {
+    "code": "39269099",
+    "description": "Other articles of plastics",
+    "chapter_code": "39",
+    "chapter_title": "Plastics and articles thereof",
+    "gst_rate": 18,
+    "keywords": ["plastic parts", "moulded plastic", "polymer goods"]
+  },
+  {
+    "code": "40169390",
+    "description": "Other gaskets, washers and other seals, of vulcanised rubber",
+    "chapter_code": "40",
+    "chapter_title": "Rubber and articles thereof",
+    "gst_rate": 18,
+    "keywords": ["rubber gasket", "seal", "washer"]
+  },
+  {
+    "code": "73089090",
+    "description": "Other structures and parts of structures, of iron or steel",
+    "chapter_code": "73",
+    "chapter_title": "Articles of iron or steel",
+    "gst_rate": 18,
+    "keywords": ["steel structure", "fabrication", "frame"]
+  },
+  {
+    "code": "73181500",
+    "description": "Other screws and bolts, whether or not with their nuts or washers",
+    "chapter_code": "73",
+    "chapter_title": "Articles of iron or steel",
+    "gst_rate": 18,
+    "keywords": ["bolt", "screw", "fastener"]
+  },
+  {
+    "code": "73181600",
+    "description": "Nuts of iron or steel",
+    "chapter_code": "73",
+    "chapter_title": "Articles of iron or steel",
+    "gst_rate": 18,
+    "keywords": ["nuts", "fastener", "hardware"]
+  },
+  {
+    "code": "74130090",
+    "description": "Other stranded wire, cables and plaited bands, of copper",
+    "chapter_code": "74",
+    "chapter_title": "Copper and articles thereof",
+    "gst_rate": 18,
+    "keywords": ["copper cable", "copper wire", "electrical copper"]
+  },
+  {
+    "code": "76169990",
+    "description": "Other articles of aluminium",
+    "chapter_code": "76",
+    "chapter_title": "Aluminium and articles thereof",
+    "gst_rate": 18,
+    "keywords": ["aluminium parts", "fabricated aluminium", "alloy item"]
+  },
+  {
+    "code": "82054000",
+    "description": "Screwdrivers",
+    "chapter_code": "82",
+    "chapter_title": "Tools, implements, cutlery and hardware",
+    "gst_rate": 18,
+    "keywords": ["screwdriver", "tool", "hand tool"]
+  },
+  {
+    "code": "84137090",
+    "description": "Other centrifugal pumps",
+    "chapter_code": "84",
+    "chapter_title": "Machinery and mechanical appliances",
+    "gst_rate": 18,
+    "keywords": ["pump", "centrifugal pump", "water pump"]
+  },
+  {
+    "code": "84145990",
+    "description": "Other fans",
+    "chapter_code": "84",
+    "chapter_title": "Machinery and mechanical appliances",
+    "gst_rate": 18,
+    "keywords": ["fan", "industrial fan", "cooling fan"]
+  },
+  {
+    "code": "84148090",
+    "description": "Other air or vacuum pumps, air or other gas compressors and fans",
+    "chapter_code": "84",
+    "chapter_title": "Machinery and mechanical appliances",
+    "gst_rate": 18,
+    "keywords": ["compressor", "air pump", "vacuum pump"]
+  },
+  {
+    "code": "84212300",
+    "description": "Oil or petrol-filters for internal combustion engines",
+    "chapter_code": "84",
+    "chapter_title": "Machinery and mechanical appliances",
+    "gst_rate": 18,
+    "keywords": ["oil filter", "filter element", "engine filter"]
+  },
+  {
+    "code": "84213990",
+    "description": "Other filtering or purifying machinery and apparatus for gases",
+    "chapter_code": "84",
+    "chapter_title": "Machinery and mechanical appliances",
+    "gst_rate": 18,
+    "keywords": ["air filter", "gas filter", "purifier"]
+  },
+  {
+    "code": "85013120",
+    "description": "DC motors, of an output not exceeding 750 W",
+    "chapter_code": "85",
+    "chapter_title": "Electrical machinery and equipment",
+    "gst_rate": 18,
+    "keywords": ["dc motor", "motor", "drive motor"]
+  },
+  {
+    "code": "85014019",
+    "description": "Other AC motors, single-phase",
+    "chapter_code": "85",
+    "chapter_title": "Electrical machinery and equipment",
+    "gst_rate": 18,
+    "keywords": ["ac motor", "single phase motor", "electric motor"]
+  },
+  {
+    "code": "85030090",
+    "description": "Other parts suitable for use solely or principally with electric motors and generators",
+    "chapter_code": "85",
+    "chapter_title": "Electrical machinery and equipment",
+    "gst_rate": 18,
+    "keywords": ["motor parts", "generator parts", "electrical spare"]
+  },
+  {
+    "code": "85353000",
+    "description": "Isolating switches and make-and-break switches, for a voltage exceeding 1,000 volts",
+    "chapter_code": "85",
+    "chapter_title": "Electrical machinery and equipment",
+    "gst_rate": 18,
+    "keywords": ["isolator", "switchgear", "high voltage switch"]
+  },
+  {
+    "code": "85362020",
+    "description": "Miniature circuit breakers",
+    "chapter_code": "85",
+    "chapter_title": "Electrical machinery and equipment",
+    "gst_rate": 18,
+    "keywords": ["mcb", "miniature circuit breaker", "breaker"]
+  },
+  {
+    "code": "85365090",
+    "description": "Other switches",
+    "chapter_code": "85",
+    "chapter_title": "Electrical machinery and equipment",
+    "gst_rate": 18,
+    "keywords": ["switch", "selector switch", "push button"]
+  },
+  {
+    "code": "85366990",
+    "description": "Other plugs and sockets",
+    "chapter_code": "85",
+    "chapter_title": "Electrical machinery and equipment",
+    "gst_rate": 18,
+    "keywords": ["plug", "socket", "connector"]
+  },
+  {
+    "code": "85371000",
+    "description": "Boards, panels, consoles, desks, cabinets and other bases, equipped with apparatus for electric control or distribution",
+    "chapter_code": "85",
+    "chapter_title": "Electrical machinery and equipment",
+    "gst_rate": 18,
+    "keywords": ["control panel", "electrical panel", "distribution board"]
+  },
+  {
+    "code": "85444299",
+    "description": "Other electric conductors, fitted with connectors, for a voltage not exceeding 1,000 volts",
+    "chapter_code": "85",
+    "chapter_title": "Electrical machinery and equipment",
+    "gst_rate": 18,
+    "keywords": ["cable assembly", "electrical conductor", "wired harness"]
+  },
+  {
+    "code": "85444999",
+    "description": "Other electric conductors, not fitted with connectors, for a voltage not exceeding 1,000 volts",
+    "chapter_code": "85",
+    "chapter_title": "Electrical machinery and equipment",
+    "gst_rate": 18,
+    "keywords": ["wire", "electrical cable", "conductor"]
+  },
+  {
+    "code": "90328990",
+    "description": "Other automatic regulating or controlling instruments and apparatus",
+    "chapter_code": "90",
+    "chapter_title": "Optical, measuring, checking and precision instruments",
+    "gst_rate": 18,
+    "keywords": ["controller", "regulator", "automation instrument"]
+  },
+  {
+    "code": "94054090",
+    "description": "Other electric lamps and lighting fittings",
+    "chapter_code": "94",
+    "chapter_title": "Furniture and lighting fittings",
+    "gst_rate": 18,
+    "keywords": ["led light", "lighting fitting", "lamp"]
+  }
+]

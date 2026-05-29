@@ -1,13 +1,19 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import db, { generateId, formatCurrency } from '../utils/database';
 import {
   AlertTriangle,
   BadgeIndianRupee,
   Boxes,
+  Check,
+  Database,
+  Download,
   Edit2,
   Filter,
+  Globe,
   Package,
   Plus,
+  RefreshCw,
   Search,
   Sparkles,
   Trash2,
@@ -16,10 +22,30 @@ import {
 } from 'lucide-react';
 import SearchableSelect from '../components/ui/SearchableSelect';
 import { useAppStore } from '../store/appStore';
+import {
+  analyzeIndustry,
+  buildCatalogItemsForBrands,
+  getIndustryCatalogs,
+  searchIndustryBrands
+} from '../utils/productCatalogIntelligence';
 
 const DEFAULT_CURRENCY = '\u20B9';
 const PRODUCT_UNITS = ['PCS', 'MTR', 'KG', 'SET', 'ROLL', 'BOX', 'LTR'];
 const GST_RATES = [0, 5, 12, 18, 28];
+
+function normalizeHsnCode(value) {
+  return `${value || ''}`.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+}
+
+function parseHsnKeywords(value) {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  try {
+    const parsed = JSON.parse(`${value || ''}`.trim() || '[]');
+    return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
 
 function createCodeFromName(name) {
   const cleaned = (name || '')
@@ -68,7 +94,7 @@ function getStockStage(product) {
   return { tone: 'healthy', label: 'Healthy stock', helper: 'Comfortable availability' };
 }
 
-function ProductModal({ product, categories, products, currencySymbol, onClose, onSave, onCategoryCreated }) {
+function ProductModal({ product, categories, products, hsnCodes, catalogItems, currencySymbol, onClose, onSave, onCategoryCreated }) {
   const [form, setForm] = useState(product || {
     name: '',
     code: '',
@@ -80,10 +106,14 @@ function ProductModal({ product, categories, products, currencySymbol, onClose, 
     selling_price: 0,
     cost_price: 0,
     min_stock: 0,
+    industry_type: '',
+    brand: '',
+    model_number: '',
     specifications: ''
   });
   const [codeTouched, setCodeTouched] = useState(Boolean(product?.code));
   const [error, setError] = useState('');
+  const [catalogBrandFilter, setCatalogBrandFilter] = useState(product?.brand || '');
 
   useEffect(() => {
     if (product?.id || codeTouched || form.code || !form.name) return;
@@ -97,6 +127,37 @@ function ProductModal({ product, categories, products, currencySymbol, onClose, 
   const categoryOptions = categories.map((category) => ({ value: category.id, label: category.name }));
   const unitOptions = PRODUCT_UNITS.map((unit) => ({ value: unit, label: unit }));
   const gstRateOptions = GST_RATES.map((rate) => ({ value: String(rate), label: `${rate}%` }));
+  const catalogBrandOptions = Array.from(new Set((catalogItems || []).map((item) => item.brand).filter(Boolean)))
+    .sort((a, b) => a.localeCompare(b))
+    .map((brand) => ({
+      value: brand,
+      label: brand
+    }));
+  const filteredCatalogItems = (catalogItems || []).filter((item) => (
+    !catalogBrandFilter || item.brand === catalogBrandFilter
+  ));
+  const catalogProductOptions = filteredCatalogItems.map((item) => ({
+    value: item.id || `${item.brand}__${item.model_number}`,
+    label: `${item.model_number} - ${item.name}`,
+    keywords: [item.brand, item.model_number, item.name, item.category, item.hsn_code, item.description, item.specifications]
+  }));
+  const currentHsnRecord = hsnCodes.find((item) => item.code === normalizeHsnCode(form.hsn_code)) || null;
+  const hsnOptions = [
+    ...(
+      form.hsn_code && !currentHsnRecord
+        ? [{
+            value: form.hsn_code,
+            label: `${form.hsn_code} - Custom code`,
+            keywords: ['custom', form.hsn_code]
+          }]
+        : []
+    ),
+    ...hsnCodes.map((item) => ({
+      value: item.code,
+      label: `${item.code} - ${item.description}`,
+      keywords: [item.chapter_code, item.chapter_title, ...(item.keywordList || [])]
+    }))
+  ];
 
   const createCategoryFromQuery = async (rawQuery) => {
     const nextCategoryName = `${rawQuery || ''}`.trim().replace(/\s+/g, ' ');
@@ -126,6 +187,59 @@ function ProductModal({ product, categories, products, currencySymbol, onClose, 
     }
   };
 
+  const applyHsnSelection = (nextCode, option) => {
+    const normalized = normalizeHsnCode(nextCode);
+    const match = hsnCodes.find((item) => item.code === normalized) || null;
+    setForm((prev) => ({
+      ...prev,
+      hsn_code: normalized,
+      gst_rate: match ? Number(match.gst_rate || prev.gst_rate || 18) : prev.gst_rate
+    }));
+    if (!normalized && option === null) {
+      setForm((prev) => ({ ...prev, hsn_code: '' }));
+    }
+  };
+
+  const ensureCategoryForTemplate = async (categoryName) => {
+    const cleanName = `${categoryName || ''}`.trim();
+    if (!cleanName) return form.category_id;
+
+    const existing = categories.find((item) => item.name?.trim().toLowerCase() === cleanName.toLowerCase());
+    if (existing) return existing.id;
+
+    const id = generateId();
+    await db.run(
+      'INSERT INTO categories (id, name, parent_id, description) VALUES (?,?,?,?)',
+      [id, cleanName, null, `Created from ${form.industry_type || 'brand'} product catalog`]
+    );
+    onCategoryCreated?.({ id, name: cleanName, parent_id: null, description: '' });
+    return id;
+  };
+
+  const applyCatalogProduct = async (optionValue) => {
+    const template = (catalogItems || []).find((item) => (item.id || `${item.brand}__${item.model_number}`) === optionValue);
+    if (!template) return;
+
+    const categoryId = await ensureCategoryForTemplate(template.category);
+    setCatalogBrandFilter(template.brand || '');
+    setForm((prev) => ({
+      ...prev,
+      name: template.name,
+      code: createCodeFromName(`${template.brand} ${template.model_number}`),
+      category_id: categoryId,
+      description: template.description,
+      unit: template.unit || prev.unit,
+      hsn_code: normalizeHsnCode(template.hsn_code),
+      gst_rate: Number(template.gst_rate || prev.gst_rate || 18),
+      brand: template.brand,
+      model_number: template.model_number,
+      industry_type: template.industry_name || prev.industry_type,
+      specifications: template.specifications
+    }));
+    setCodeTouched(false);
+    setError('');
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -153,25 +267,28 @@ function ProductModal({ product, categories, products, currencySymbol, onClose, 
       form.category_id,
       form.description,
       form.unit,
-      form.hsn_code,
+      normalizeHsnCode(form.hsn_code),
       Number(form.gst_rate) || 0,
       Number(form.selling_price) || 0,
       Number(form.cost_price) || 0,
       Number(form.min_stock) || 0,
+      form.industry_type,
+      form.brand,
+      form.model_number,
       form.specifications
     ];
 
     if (product?.id) {
       await db.run(
         `UPDATE products SET name=?,code=?,category_id=?,description=?,unit=?,hsn_code=?,
-        gst_rate=?,selling_price=?,cost_price=?,min_stock=?,specifications=? WHERE id=?`,
+        gst_rate=?,selling_price=?,cost_price=?,min_stock=?,industry_type=?,brand=?,model_number=?,specifications=? WHERE id=?`,
         [...params, product.id]
       );
     } else {
       const id = generateId();
       await db.run(
-        `INSERT INTO products (id,name,code,category_id,description,unit,hsn_code,gst_rate,selling_price,cost_price,min_stock,specifications)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO products (id,name,code,category_id,description,unit,hsn_code,gst_rate,selling_price,cost_price,min_stock,industry_type,brand,model_number,specifications)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [id, ...params]
       );
       await db.run('INSERT INTO inventory (id, product_id, quantity) VALUES (?,?,0)', [generateId(), id]);
@@ -230,6 +347,62 @@ function ProductModal({ product, categories, products, currencySymbol, onClose, 
             )}
 
             <div className="catalogue-form-section">
+              <div className="catalogue-form-section-header catalogue-smart-header">
+                <div>
+                  <h4>Imported Brand Catalog Search</h4>
+                  <span>Search imported catalog data by brand, model number, product name, category, or HSN.</span>
+                </div>
+                <div className="catalogue-smart-badge">
+                  <Database size={14} />
+                  <span>{catalogItems.length} imported items</span>
+                </div>
+              </div>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Brand</label>
+                  <SearchableSelect
+                    value={catalogBrandFilter}
+                    onChange={(nextValue) => {
+                      setCatalogBrandFilter(nextValue || '');
+                      if (nextValue) {
+                        updateField('brand', nextValue);
+                      }
+                    }}
+                    options={catalogBrandOptions}
+                    placeholder={catalogItems.length ? 'Search brand...' : 'Import brand catalogs from Product Catalogue first...'}
+                    disabled={!catalogItems.length}
+                    clearable
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Product Model Number</label>
+                  <SearchableSelect
+                    value=""
+                    onChange={applyCatalogProduct}
+                    options={catalogProductOptions}
+                    placeholder={
+                      !catalogItems.length
+                        ? 'Import brand catalogs from Product Catalogue first...'
+                        : catalogBrandFilter
+                          ? 'Search model number or product name...'
+                          : 'Select a brand first, then search model number...'
+                    }
+                    disabled={!catalogItems.length || !catalogBrandFilter}
+                  />
+                </div>
+              </div>
+              <div className="catalogue-download-note">
+                <Download size={14} />
+                <span>
+                  {catalogBrandFilter
+                    ? `${filteredCatalogItems.length} item(s) found for ${catalogBrandFilter}. Selecting a model fills product name, brand, model, HSN, GST, category, description, and specifications.`
+                    : 'Choose a brand first, then pick the right model number to auto-fill the product master.'}
+                </span>
+              </div>
+              <span className="text-xs text-muted">Catalog data is stored locally after import, so product creation stays fast and searchable.</span>
+            </div>
+
+            <div className="catalogue-form-section">
               <div className="catalogue-form-section-header">
                 <h4>Identity</h4>
                 <span>Strong product masters make downstream BOM, stock, and pricing workflows faster.</span>
@@ -259,6 +432,35 @@ function ProductModal({ product, categories, products, currencySymbol, onClose, 
                   <span className="text-xs text-muted">
                     {codeTouched ? 'Custom code enabled.' : 'Auto-generated from product name until you edit it.'}
                   </span>
+                </div>
+              </div>
+              <div className="grid-3 mt-3">
+                <div className="form-group">
+                  <label className="form-label">Industry</label>
+                  <input
+                    className="form-control"
+                    value={form.industry_type || ''}
+                    onChange={(e) => updateField('industry_type', e.target.value)}
+                    placeholder="e.g. Electrical Control Panels"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Brand</label>
+                  <input
+                    className="form-control"
+                    value={form.brand || ''}
+                    onChange={(e) => updateField('brand', e.target.value)}
+                    placeholder="e.g. Schneider Electric"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Model Number</label>
+                  <input
+                    className="form-control"
+                    value={form.model_number || ''}
+                    onChange={(e) => updateField('model_number', e.target.value)}
+                    placeholder="e.g. A9F74116"
+                  />
                 </div>
               </div>
             </div>
@@ -341,7 +543,36 @@ function ProductModal({ product, categories, products, currencySymbol, onClose, 
               <div className="grid-2">
                 <div className="form-group">
                   <label className="form-label">HSN Code</label>
-                  <input className="form-control" value={form.hsn_code} onChange={(e) => updateField('hsn_code', e.target.value)} placeholder="HSN/SAC code" />
+                  <SearchableSelect
+                    value={normalizeHsnCode(form.hsn_code)}
+                    onChange={(nextValue, option) => applyHsnSelection(nextValue, option)}
+                    options={hsnOptions}
+                    placeholder="Type HSN code or search by category..."
+                    clearable
+                    noResultsAction={({ query }) => {
+                      const normalized = normalizeHsnCode(query);
+                      if (!normalized) {
+                        return <div className="searchable-select__empty">Type a code or product meaning to search HSN</div>;
+                      }
+                      return (
+                        <button
+                          type="button"
+                          className="searchable-select__option"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => applyHsnSelection(normalized, null)}
+                        >
+                          Use custom HSN "{normalized}"
+                        </button>
+                      );
+                    }}
+                  />
+                  <span className="text-xs text-muted">
+                    {currentHsnRecord
+                      ? `Chapter ${currentHsnRecord.chapter_code || '-'} - ${currentHsnRecord.chapter_title || 'Linked from HSN library'}`
+                      : form.hsn_code
+                        ? 'Custom code currently applied to this product.'
+                        : 'Search by code, chapter, or description from the HSN library.'}
+                  </span>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Min. Stock Level</label>
@@ -377,12 +608,20 @@ function ProductModal({ product, categories, products, currencySymbol, onClose, 
 }
 
 export default function ProductsPro() {
+  const navigate = useNavigate();
   const { settings } = useAppStore();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [hsnCodes, setHsnCodes] = useState([]);
+  const [catalogItems, setCatalogItems] = useState([]);
   const [search, setSearch] = useState('');
   const [filterCat, setFilterCat] = useState('');
   const [stockFilter, setStockFilter] = useState('all');
+  const [catalogIndustryId, setCatalogIndustryId] = useState(analyzeIndustry(settings?.company_industry_type || '').id);
+  const [brandSearch, setBrandSearch] = useState('');
+  const [selectedBrands, setSelectedBrands] = useState([]);
+  const [webBrands, setWebBrands] = useState([]);
+  const [catalogStatus, setCatalogStatus] = useState('');
   const [modal, setModal] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -390,17 +629,32 @@ export default function ProductsPro() {
     loadData();
   }, []);
 
+  useEffect(() => {
+    if (settings?.company_industry_type) {
+      setCatalogIndustryId(analyzeIndustry(settings.company_industry_type).id);
+    }
+  }, [settings?.company_industry_type]);
+
   const loadData = async () => {
     setLoading(true);
-    const [prods, cats] = await Promise.all([
-      db.all(`SELECT p.*, c.name as category_name, COALESCE(i.quantity, 0) as stock
+    const [prods, cats, hsnRows, catalogRows] = await Promise.all([
+      db.all(`SELECT p.*, c.name as category_name, hc.description as hsn_description, hc.chapter_title as hsn_chapter_title, COALESCE(i.quantity, 0) as stock
         FROM products p LEFT JOIN categories c ON p.category_id = c.id
+        LEFT JOIN hsn_codes hc ON hc.code = p.hsn_code AND hc.is_active = 1
         LEFT JOIN inventory i ON p.id = i.product_id
         WHERE p.is_active = 1 ORDER BY p.name`),
-      db.all('SELECT * FROM categories ORDER BY name')
+      db.all('SELECT * FROM categories ORDER BY name'),
+      db.all('SELECT * FROM hsn_codes WHERE is_active = 1 ORDER BY chapter_code, code'),
+      db.all('SELECT * FROM product_catalog_items ORDER BY brand, name')
     ]);
     setProducts(prods);
     setCategories(cats);
+    setCatalogItems(catalogRows || []);
+    setHsnCodes((hsnRows || []).map((row) => ({
+      ...row,
+      code: normalizeHsnCode(row.code),
+      keywordList: parseHsnKeywords(row.keywords)
+    })));
     setLoading(false);
   };
 
@@ -412,12 +666,105 @@ export default function ProductsPro() {
     });
   };
 
+  const selectedIndustry = getIndustryCatalogs().find((industry) => industry.id === catalogIndustryId) || getIndustryCatalogs()[0];
+  const industryOptions = getIndustryCatalogs().map((industry) => ({
+    value: industry.id,
+    label: industry.name,
+    keywords: industry.keywords
+  }));
+  const curatedBrands = searchIndustryBrands(selectedIndustry?.id, brandSearch);
+  const brandOptions = Array.from(new Set([
+    ...curatedBrands,
+    ...webBrands.map((item) => item.brand).filter(Boolean)
+  ])).slice(0, 40);
+  const importedBrandCount = new Set(catalogItems.map((item) => item.brand).filter(Boolean)).size;
+  const visibleIndustryCatalogItems = catalogItems.filter((item) => item.industry_id === selectedIndustry?.id);
+
+  const handleCatalogIndustryChange = async (nextIndustryId) => {
+    const nextIndustry = getIndustryCatalogs().find((industry) => industry.id === nextIndustryId) || analyzeIndustry(nextIndustryId);
+    setCatalogIndustryId(nextIndustry.id);
+    setSelectedBrands([]);
+    setWebBrands([]);
+    setCatalogStatus('');
+  };
+
+  const toggleCatalogBrand = (brandName) => {
+    setSelectedBrands((prev) => (
+      prev.includes(brandName)
+        ? prev.filter((item) => item !== brandName)
+        : [...prev, brandName]
+    ));
+  };
+
+  const discoverBrandsOnline = async () => {
+    setCatalogStatus('Searching web for brand catalog sources...');
+    const result = await window.electronAPI?.discoverCatalogBrands?.({
+      industryName: selectedIndustry?.name,
+      query: `${brandSearch || selectedIndustry?.name || ''} product catalog brands`
+    });
+    if (!result?.success) {
+      setCatalogStatus(`Online brand search failed. ${result?.error || 'Using built-in reputed brand list.'}`);
+      return;
+    }
+    setWebBrands(result.results || []);
+    setCatalogStatus(result.results?.length ? `Found ${result.results.length} online catalog source(s).` : 'No online source found. Use reputed brand list or type brand name.');
+  };
+
+  const addTypedBrand = () => {
+    const clean = `${brandSearch || ''}`.trim();
+    if (!clean) return;
+    setSelectedBrands((prev) => (prev.includes(clean) ? prev : [...prev, clean]));
+    setBrandSearch('');
+  };
+
+  const importSelectedBrandCatalogs = async () => {
+    if (!selectedBrands.length) {
+      setCatalogStatus('Select at least one brand before importing catalog items.');
+      return;
+    }
+
+    setCatalogStatus('Importing selected brand catalogs...');
+    const sourceMap = Object.fromEntries(webBrands.map((item) => [item.brand, item.url]));
+    const items = buildCatalogItemsForBrands(selectedIndustry.id, selectedBrands, sourceMap);
+    for (const item of items) {
+      await db.run(
+        `INSERT OR REPLACE INTO product_catalog_items (
+          id, industry_id, industry_name, brand, name, model_number, category, unit, hsn_code, gst_rate,
+          description, specifications, source_url, source_type, imported_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))`,
+        [
+          item.id,
+          item.industry_id,
+          item.industry_name,
+          item.brand,
+          item.name,
+          item.model_number,
+          item.category,
+          item.unit,
+          item.hsn_code,
+          item.gst_rate,
+          item.description,
+          item.specifications,
+          item.source_url,
+          item.source_type
+        ]
+      );
+    }
+    await loadData();
+    setCatalogStatus(`Imported ${items.length} catalog item(s) from ${selectedBrands.length} brand(s).`);
+  };
+
   const filtered = products.filter((product) => {
     const query = search.toLowerCase();
     const matchSearch = !query ||
       product.name.toLowerCase().includes(query) ||
       (product.code || '').toLowerCase().includes(query) ||
-      (product.hsn_code || '').toLowerCase().includes(query);
+      (product.brand || '').toLowerCase().includes(query) ||
+      (product.model_number || '').toLowerCase().includes(query) ||
+      (product.industry_type || '').toLowerCase().includes(query) ||
+      (product.hsn_code || '').toLowerCase().includes(query) ||
+      (product.hsn_description || '').toLowerCase().includes(query) ||
+      (product.hsn_chapter_title || '').toLowerCase().includes(query);
     const matchCategory = !filterCat || product.category_id === filterCat;
     const stage = getStockStage(product);
     const matchStock =
@@ -467,13 +814,16 @@ export default function ProductsPro() {
   const categoryFilterOptions = categories.map((category) => ({ value: category.id, label: category.name }));
 
   return (
-    <div className="page">
+    <div className="page catalogue-page">
       <div className="page-header">
         <div className="page-title">
           <h2>Product Catalogue</h2>
           <span className="page-subtitle">{products.length} products in catalogue</span>
         </div>
         <div className="page-actions">
+          <button className="btn btn-secondary" onClick={() => navigate('/hsn')}>
+            <Search size={14} /> HSN Library
+          </button>
           <button className="btn btn-primary" onClick={() => setModal({})}>
             <Plus size={15} /> Add Product
           </button>
@@ -505,6 +855,91 @@ export default function ProductsPro() {
           <strong>{lowStockCount === 0 ? 'Stable' : `${lowStockCount} attention items`}</strong>
           <span>{products.length} active SKUs tracked across pricing and inventory.</span>
         </div>
+      </div>
+
+      <div className="catalogue-import-panel">
+        <div className="catalogue-import-head">
+          <div>
+            <div className="catalogue-hero-kicker">
+              <Globe size={14} />
+              <span>Brand catalog importer</span>
+            </div>
+            <h3>Choose your industry, select reputed brands, and import searchable catalog items.</h3>
+            <p>
+              Imported brand catalogs become a local product library. While creating products, users can search by brand, model number, product name, category, or HSN.
+            </p>
+          </div>
+          <div className="catalogue-import-meter">
+            <strong>{catalogItems.length}</strong>
+            <span>catalog items</span>
+            <small>{importedBrandCount} imported brands</small>
+          </div>
+        </div>
+
+        <div className="catalogue-import-controls">
+          <div className="form-group">
+            <label className="form-label">Industry Type</label>
+            <SearchableSelect
+              value={catalogIndustryId}
+              onChange={handleCatalogIndustryChange}
+              options={industryOptions}
+              placeholder="Search industry..."
+            />
+            <span className="text-xs text-muted">{selectedIndustry?.summary}</span>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Search Brand</label>
+            <div className="catalogue-brand-search">
+              <input
+                className="form-control"
+                value={brandSearch}
+                onChange={(e) => setBrandSearch(e.target.value)}
+                placeholder="Type brand name or search online..."
+              />
+              <button type="button" className="btn btn-secondary" onClick={addTypedBrand}>
+                <Plus size={14} /> Add
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={discoverBrandsOnline}>
+                <RefreshCw size={14} /> Online
+              </button>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Download Catalog</label>
+            <button type="button" className="btn btn-primary" onClick={importSelectedBrandCatalogs}>
+              <Download size={14} /> Import Selected Brands
+            </button>
+            <span className="text-xs text-muted">{visibleIndustryCatalogItems.length} items already imported for this industry.</span>
+          </div>
+        </div>
+
+        <div className="catalogue-brand-grid">
+          {brandOptions.map((brandName) => {
+            const active = selectedBrands.includes(brandName);
+            const importedCount = catalogItems.filter((item) => item.brand === brandName).length;
+            return (
+              <button
+                key={brandName}
+                type="button"
+                className={`catalogue-brand-option ${active ? 'active' : ''}`}
+                onClick={() => toggleCatalogBrand(brandName)}
+              >
+                <span className="catalogue-brand-check">{active ? <Check size={13} /> : null}</span>
+                <span>{brandName}</span>
+                {importedCount > 0 && <small>{importedCount}</small>}
+              </button>
+            );
+          })}
+        </div>
+
+        {webBrands.length > 0 && (
+          <div className="catalogue-source-list">
+            {webBrands.slice(0, 5).map((item) => (
+              <span key={`${item.title}-${item.url}`}>{item.title}</span>
+            ))}
+          </div>
+        )}
+        {catalogStatus && <div className="catalogue-download-note"><Database size={14} /><span>{catalogStatus}</span></div>}
       </div>
 
       <div className="catalogue-stats-grid">
@@ -567,7 +1002,7 @@ export default function ProductsPro() {
       <div className="filter-bar">
         <div className="search-bar">
           <Search size={14} color="var(--text-muted)" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by product, code, or HSN..." />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search product, brand, model, HSN, or category..." />
         </div>
         <div className="catalogue-filter-group">
           <Filter size={14} color="var(--text-muted)" />
@@ -631,11 +1066,20 @@ export default function ProductsPro() {
                             <span className="font-mono text-sm text-accent">{product.code || 'No code'}</span>
                             <span>{product.unit}</span>
                           </div>
+                          {(product.brand || product.model_number) && (
+                            <div className="catalogue-product-meta">
+                              {product.brand && <span>{product.brand}</span>}
+                              {product.model_number && <span className="font-mono">{product.model_number}</span>}
+                            </div>
+                          )}
                           {product.description && <div className="text-xs text-muted">{product.description.substring(0, 72)}</div>}
                         </div>
                       </div>
                     </td>
-                    <td><span className="badge badge-secondary">{product.category_name || 'Uncategorized'}</span></td>
+                    <td>
+                      <span className="badge badge-secondary">{product.category_name || 'Uncategorized'}</span>
+                      {product.industry_type && <div className="text-xs text-muted mt-1">{product.industry_type}</div>}
+                    </td>
                     <td>
                       <div className="catalogue-commercials">
                         <div>
@@ -658,6 +1102,11 @@ export default function ProductsPro() {
                       <div className="catalogue-compliance">
                         <span className="catalogue-metric-label">GST {product.gst_rate}%</span>
                         <strong>{product.hsn_code || 'HSN pending'}</strong>
+                        {product.hsn_description ? (
+                          <div className="text-secondary text-sm" style={{ marginTop: 4 }}>
+                            {product.hsn_description}
+                          </div>
+                        ) : null}
                       </div>
                     </td>
                     <td>
@@ -698,6 +1147,8 @@ export default function ProductsPro() {
           product={modal?.id ? modal : null}
           categories={categories}
           products={products}
+          hsnCodes={hsnCodes}
+          catalogItems={catalogItems}
           currencySymbol={sym}
           onCategoryCreated={registerCreatedCategory}
           onClose={() => setModal(null)}

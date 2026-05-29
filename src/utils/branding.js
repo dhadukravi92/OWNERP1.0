@@ -1,4 +1,4 @@
-export const DEFAULT_ERP_NAME = 'OWNERP';
+export const DEFAULT_ERP_NAME = 'OwnERP';
 export const DEFAULT_COMPANY_LOGO = '/ownerp-logo.png';
 
 function cleanValue(value) {

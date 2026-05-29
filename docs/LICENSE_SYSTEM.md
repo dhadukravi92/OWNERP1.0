@@ -1,4 +1,4 @@
-# OWNERP License System
+# OwnERP License System
 
 ## What This Implements
 - Signed license keys (Ed25519 signature verification in Electron main process)
@@ -32,9 +32,9 @@
   1. Generate keypair
   2. Generate machine-bound license key
   3. Verify/inspect license key
-- Machine ID can be copied from OWNERP license activation screen.
+- Machine ID can be copied from OwnERP license activation screen.
 
-## GUI Generator EXE (OWNERP-style)
+## GUI Generator EXE (OwnERP-style)
 - Run desktop UI in development:
   - `npm run license:generator:ui`
 - Build installer EXE:
@@ -48,12 +48,12 @@
 - Generator now also writes an activation bundle file beside the raw license file:
   - Example: `license.txt` -> `license.activation.json`
   - This bundle includes the signed license key plus the matching public key PEM.
-  - Preferred activation flow: paste the bundle JSON into OWNERP activation.
+  - Preferred activation flow: paste the bundle JSON into OwnERP activation.
 
 ## Installer Company Details + Activation Logs
 - Windows installer now captures company details during setup.
-- Installer writes seed file: `%APPDATA%\OWNERP\company-seed.txt`.
-- OWNERP imports missing company fields from this seed on first run.
+- Installer writes seed file: `%APPDATA%\OwnERP\company-seed.txt`.
+- OwnERP imports missing company fields from this seed on first run.
 - Every activation attempt is logged in `license_activation_logs` with:
   - status (`success` / `failed`)
   - reason
@@ -68,8 +68,8 @@
   2. `electron-store` key: `license.publicKeyPem`
   3. Fallback embedded public key (development default)
 
-- OWNERP activation can now persist a trusted public key automatically when the operator pastes a valid activation bundle JSON from the generator.
-- If you paste only a raw signed key, OWNERP can activate it only when the app already trusts the matching public key.
+- OwnERP activation can now persist a trusted public key automatically when the operator pastes a valid activation bundle JSON from the generator.
+- If you paste only a raw signed key, OwnERP can activate it only when the app already trusts the matching public key.
 
 For production, set your own public key before packaging.
 
@@ -78,6 +78,6 @@ For production, set your own public key before packaging.
 - If `machineId` exists in payload, runtime enforces exact device match.
 
 ## Security Notes
-- Do not ship private key with OWNERP.
+- Do not ship private key with OwnERP.
 - Rotate keys if private key is exposed.
 - For stronger anti-tamper, consider moving license validation into a hardened native addon and adding online revocation checks.

@@ -1,5 +1,5 @@
-# PanelERP - Complete Installation & Setup Guide
-## Panel Manufacturing & Electrical Industry ERP System
+# OwnERP - Complete Installation & Setup Guide
+## Generic Business ERP System
 
 ---
 
@@ -74,9 +74,9 @@ npm install --global windows-build-tools
 ## 3. STEP-BY-STEP INSTALLATION <a name="step-by-step-installation"></a>
 
 ### Step A: Extract the source code
-1. Extract the `panel-erp.zip` to a folder, e.g., `C:\PanelERP\`
+1. Extract the `ownerp.zip` to a folder, e.g., `C:\OwnERP\`
 2. Open **Command Prompt** or **PowerShell** as Administrator
-3. Navigate: `cd C:\PanelERP\panel-erp`
+3. Navigate: `cd C:\OwnERP\ownerp`
 
 ### Step B: Install dependencies
 ```bash
@@ -114,7 +114,7 @@ npm run package
 ```
 This creates a Windows installer in the `dist/` folder.
 
-**Output file:** `dist/PanelERP Setup 1.0.0.exe`
+**Output file:** `dist/OwnERP Setup 1.0.0.exe`
 
 ### Step 3: Distribute
 - The generated `.exe` is a self-contained NSIS installer
@@ -128,8 +128,8 @@ This creates a Windows installer in the `dist/` folder.
 ## 5. FIRST-TIME SETUP <a name="first-time-setup"></a>
 
 ### After installation:
-1. During setup, choose the folder where PanelERP should save the database
-2. Launch **PanelERP** from desktop or Start Menu
+1. During setup, choose the folder where OwnERP should save the database
+2. Launch **OwnERP** from desktop or Start Menu
 3. Login: `admin` / `admin123`
 4. Go to **Settings** → Company tab
 5. Enter your company details:
@@ -143,8 +143,8 @@ This creates a Windows installer in the `dist/` folder.
 2. Click **Change Location**
 3. Select the new folder
 4. When asked, choose one of the following:
-   - **Yes, copy old data** → PanelERP copies the current database to the new path
-   - **No, create new database** → PanelERP starts with a fresh database in the new path
+   - **Yes, copy old data** → OwnERP copies the current database to the new path
+   - **No, create new database** → OwnERP starts with a fresh database in the new path
 
 ### Change admin password:
 1. Go to **Settings** → Users tab
@@ -166,7 +166,7 @@ This creates a Windows installer in the `dist/` folder.
 ## 6. USER MANUAL <a name="user-manual"></a>
 
 Detailed operating reference:
-- See [OPERATIONS_MANUAL.md](/d:/PanelERP/Panel-erp/docs/OPERATIONS_MANUAL.md) for module-wise and form-wise working instructions.
+- See [OPERATIONS_MANUAL.md](/d:/OwnERP/OwnERP/docs/OPERATIONS_MANUAL.md) for module-wise and form-wise working instructions.
 
 ### 🔑 Login & Roles
 
@@ -246,17 +246,17 @@ Detailed operating reference:
 
 ## 7. GOOGLE DRIVE BACKUP SETUP <a name="google-drive-backup-setup"></a>
 
-OWNERP supports two backup methods:
-- `Google Drive API Login`: OWNERP signs in to Google Drive once, saves the reusable login token on this PC, and uploads backups directly to Drive.
-- `Local Synced Folder`: OWNERP writes backups into a local folder that is already synced by Google Drive for desktop or another sync tool.
+OwnERP supports two backup methods:
+- `Google Drive API Login`: OwnERP signs in to Google Drive once, saves the reusable login token on this PC, and uploads backups directly to Drive.
+- `Local Synced Folder`: OwnERP writes backups into a local folder that is already synced by Google Drive for desktop or another sync tool.
 
 For fully automatic cloud upload without depending on Google Drive desktop sync, use `Google Drive API Login`.
 
 ### How the Google Drive API method works
-1. OWNERP creates the backup files locally.
-2. OWNERP refreshes the saved Google login token.
-3. OWNERP creates or reuses the current month folder in Google Drive.
-4. OWNERP uploads both files automatically:
+1. OwnERP creates the backup files locally.
+2. OwnERP refreshes the saved Google login token.
+3. OwnERP creates or reuses the current month folder in Google Drive.
+4. OwnERP uploads both files automatically:
    - ERP master database backup
    - Accounting database backup
 5. The same flow is used for both:
@@ -264,12 +264,12 @@ For fully automatic cloud upload without depending on Google Drive desktop sync,
    - Scheduled auto backup
 
 ### Where the Google login is saved
-- OWNERP does not store the Google password.
-- OWNERP stores the Google OAuth refresh token in the Electron app config on the local PC.
+- OwnERP does not store the Google password.
+- OwnERP stores the Google OAuth refresh token in the Electron app config on the local PC.
 - Current storage path shown inside the app:
   - `Settings -> Backup & Data -> Login Storage`
 - Typical file used by the app config:
-  - `%APPDATA%\OWNERP\panelerp-config.json`
+  - `%APPDATA%\OwnERP\ownerp-config.json`
   - or the Electron user-data location shown by the app
 
 If you want to remove the saved Google login later:
@@ -278,7 +278,7 @@ If you want to remove the saved Google login later:
 
 ### Google Cloud Console setup
 
-Before linking Google Drive in OWNERP, create a Google Cloud project and OAuth credentials.
+Before linking Google Drive in OwnERP, create a Google Cloud project and OAuth credentials.
 
 #### Step 1: Open Google Cloud Console
 1. Go to `https://console.cloud.google.com/`
@@ -301,7 +301,7 @@ Before linking Google Drive in OWNERP, create a Google Cloud project and OAuth c
 1. Open `APIs & Services -> Credentials`
 2. Click `Create Credentials -> OAuth client ID`
 3. Choose application type `Desktop app`
-4. Give it a name such as `OWNERP Desktop Backup`
+4. Give it a name such as `OwnERP Desktop Backup`
 5. Click `Create`
 6. Copy these two values:
    - `Client ID`
@@ -309,10 +309,10 @@ Before linking Google Drive in OWNERP, create a Google Cloud project and OAuth c
 
 Important:
 - Use a `Desktop app` OAuth client.
-- OWNERP opens a browser login and receives the callback on the local machine automatically.
+- OwnERP opens a browser login and receives the callback on the local machine automatically.
 
 ### Create or choose the target Google Drive folder
-1. In Google Drive, create a folder such as `OWNERP Backups`
+1. In Google Drive, create a folder such as `OwnERP Backups`
 2. Open that folder in the browser
 3. Copy either:
    - the full folder URL
@@ -324,7 +324,7 @@ Example:
 - Folder ID:
   - `1AbCdEfGhIjKlMnOpQrStUvWxYz`
 
-### Link Google Drive inside OWNERP
+### Link Google Drive inside OwnERP
 1. Open `Settings -> Backup & Data`
 2. In `Backup Provider`, choose `Google Drive API Login`
 3. Enter:
@@ -335,7 +335,7 @@ Example:
 5. Click `Connect Google Drive`
 6. A browser window will open
 7. Sign in with Google and approve access
-8. Return to OWNERP and confirm:
+8. Return to OwnERP and confirm:
    - connected account is shown
    - folder ID is shown
    - login storage path is shown
@@ -352,14 +352,14 @@ Example:
 
 ### What gets uploaded
 Each backup run uploads both databases automatically:
-- `panelerp_<interval>_<date>_master.db`
-- `panelerp_<interval>_<date>_accounting.db`
+- `ownerp_<interval>_<date>_master.db`
+- `ownerp_<interval>_<date>_accounting.db`
 
-OWNERP groups them by month inside Google Drive.
+OwnERP groups them by month inside Google Drive.
 
 ### Security notes
-- OWNERP never stores the Google account password.
-- OWNERP stores a refresh token so scheduled uploads can continue without repeated login prompts.
+- OwnERP never stores the Google account password.
+- OwnERP stores a refresh token so scheduled uploads can continue without repeated login prompts.
 - Anyone with access to the Windows user account and local config may be able to reuse that token.
 - For higher security in production, consider moving token storage to Windows Credential Manager / DPAPI.
 
@@ -368,14 +368,14 @@ OWNERP groups them by month inside Google Drive.
 #### "Google Drive Client ID and Client Secret are required"
 - Re-open `APIs & Services -> Credentials`
 - Copy the Desktop OAuth client values again
-- Save them in OWNERP
+- Save them in OwnERP
 
 #### "Google Drive folder URL or folder ID is required"
 - Paste the full Google Drive folder URL or only the folder ID
 - Do not paste a file URL
 
 #### "Google did not return a refresh token"
-- Remove the saved login from OWNERP
+- Remove the saved login from OwnERP
 - In your Google account, revoke the app's access
 - Connect again and approve the app
 
@@ -412,12 +412,12 @@ npm rebuild better-sqlite3
 
 ### Data not saving
 - Check disk space
-- Database path: `C:\Users\<username>\AppData\Roaming\PanelERP\panelerp.db`
+- Database path: `C:\Users\<username>\AppData\Roaming\OwnERP\ownerp.db`
 - Check file permissions on AppData folder
 
 ### Reset to factory defaults
 1. Close the application
-2. Delete: `C:\Users\<username>\AppData\Roaming\PanelERP\`
+2. Delete: `C:\Users\<username>\AppData\Roaming\OwnERP\`
 3. Reopen — fresh database will be created
 
 ---
@@ -426,7 +426,7 @@ npm rebuild better-sqlite3
 
 The app uses **SQLite** (single file database). Location:
 ```
-C:\Users\<YourName>\AppData\Roaming\PanelERP\panelerp.db
+C:\Users\<YourName>\AppData\Roaming\OwnERP\ownerp.db
 ```
 
 ### Tables Overview
@@ -454,8 +454,8 @@ notifications       — System alerts and notifications
 
 ### Backup & Migration
 - Backup: Settings → Backup & Data → Create Backup Now
-- Backups saved to: `%APPDATA%\PanelERP\backups\`
-- To migrate: copy `panelerp.db` to new machine's AppData folder
+- Backups saved to: `%APPDATA%\OwnERP\backups\`
+- To migrate: copy `ownerp.db` to new machine's AppData folder
 
 ---
 
@@ -464,9 +464,9 @@ notifications       — System alerts and notifications
 For issues, refer to:
 - This installation guide
 - README.md in the source folder
-- Check logs in: `%APPDATA%\PanelERP\logs\`
+- Check logs in: `%APPDATA%\OwnERP\logs\`
 
 ---
 
-*PanelERP v1.0.0 — Built with Electron + React + SQLite*
+*OwnERP v1.0.0 — Built with Electron + React + SQLite*
 *Open Source: MIT License*

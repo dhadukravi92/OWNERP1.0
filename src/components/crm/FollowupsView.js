@@ -1,152 +1,319 @@
-import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, User, Edit, Trash2, Plus, Search } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Calendar, CheckCircle, Edit, Plus, Search, Trash2 } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
+import db, { generateId } from '../../utils/database';
 
-const FollowupsView = () => {
-  const { currentUser } = useAppStore();
+const today = () => new Date().toISOString().slice(0, 10);
+
+const emptyForm = (currentUser) => ({
+  lead_id: '',
+  followup_type: 'call',
+  scheduled_date: today(),
+  notes: '',
+  outcome: '',
+  next_followup_date: '',
+  assigned_to: currentUser?.id || ''
+});
+
+const followupTypes = [
+  { value: 'call', label: 'Call' },
+  { value: 'email', label: 'Email' },
+  { value: 'meeting', label: 'Meeting' },
+  { value: 'demo', label: 'Demo' },
+  { value: 'site_visit', label: 'Site Visit' }
+];
+
+export default function FollowupsView() {
+  const { currentUser, loadCrmStats } = useAppStore();
   const [followups, setFollowups] = useState([]);
+  const [leads, setLeads] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({
-    lead: '',
-    owner: currentUser?.name || '',
-    contactDate: '',
-    dueDate: '',
-    status: 'pending',
-    notes: ''
-  });
+  const [form, setForm] = useState(emptyForm(currentUser));
+  const [error, setError] = useState('');
 
-  useEffect(() => { loadInitial(); }, []);
-  useEffect(() => { filterTable(); }, [followups, search]);
+  useEffect(() => {
+    loadData();
+  }, []);
 
-  const loadInitial = () => {
-    const data = [
-      { id: 'f1', lead: 'Tech Solutions Pvt Ltd', owner: 'Ravi', contactDate: '2026-03-25', dueDate: '2026-04-02', status: 'pending', notes: 'Discuss prototype', createdAt: '2026-03-25' },
-      { id: 'f2', lead: 'Manufacturing Corp', owner: 'Priya', contactDate: '2026-03-22', dueDate: '2026-03-29', status: 'done', notes: 'Shared quote request', createdAt: '2026-03-22' }
-    ];
-    setFollowups(data);
-  };
-
-  const filterTable = () => {
+  useEffect(() => {
     const text = search.trim().toLowerCase();
-    if (!text) return setFiltered(followups);
-    setFiltered(followups.filter(item =>
-      item.lead.toLowerCase().includes(text) ||
-      item.owner.toLowerCase().includes(text) ||
-      item.notes.toLowerCase().includes(text)
-    ));
+    if (!text) {
+      setFiltered(followups);
+      return;
+    }
+    setFiltered(followups.filter((item) => [
+      item.lead_number,
+      item.company_name,
+      item.contact_person,
+      item.followup_type,
+      item.notes,
+      item.outcome
+    ].filter(Boolean).join(' ').toLowerCase().includes(text)));
+  }, [followups, search]);
+
+  const loadData = async () => {
+    const [followupRows, leadRows] = await Promise.all([
+      db.all(`
+        SELECT f.*, l.lead_number, l.status AS lead_status, c.company AS company_name, c.name AS contact_person,
+          u.full_name AS created_by_name
+        FROM crm_followups f
+        JOIN crm_leads l ON l.id = f.lead_id
+        LEFT JOIN contacts c ON c.id = l.customer_id
+        LEFT JOIN users u ON u.id = f.created_by
+        ORDER BY COALESCE(f.actual_date, f.scheduled_date) ASC, datetime(f.created_at) DESC
+      `),
+      db.all(`
+        SELECT l.id, l.lead_number, c.company AS company_name, c.name AS contact_person
+        FROM crm_leads l
+        LEFT JOIN contacts c ON c.id = l.customer_id
+        WHERE l.status NOT IN ('closed_won', 'closed_lost')
+        ORDER BY datetime(l.updated_at) DESC, datetime(l.created_at) DESC
+      `)
+    ]);
+    setFollowups(followupRows || []);
+    setLeads(leadRows || []);
   };
+
+  const counts = useMemo(() => {
+    const pending = followups.filter((item) => !item.actual_date).length;
+    const overdue = followups.filter((item) => !item.actual_date && item.scheduled_date < today()).length;
+    const done = followups.filter((item) => item.actual_date).length;
+    return { pending, overdue, done };
+  }, [followups]);
 
   const openForm = (item = null) => {
-    if (item) setForm(item);
-    else setForm({ lead: '', owner: currentUser?.name || '', contactDate: '', dueDate: '', status: 'pending', notes: '' });
-    setEditing(item);
+    setError('');
+    if (item) {
+      setForm({
+        lead_id: item.lead_id || '',
+        followup_type: item.followup_type || 'call',
+        scheduled_date: (item.scheduled_date || '').slice(0, 10),
+        notes: item.notes || '',
+        outcome: item.outcome || '',
+        next_followup_date: (item.next_followup_date || '').slice(0, 10),
+        assigned_to: currentUser?.id || ''
+      });
+      setEditing(item);
+    } else {
+      setForm(emptyForm(currentUser));
+      setEditing(null);
+    }
     setShowForm(true);
   };
 
-  const saveFollowup = () => {
-    if (!form.lead || !form.dueDate || !form.contactDate) return;
-    if (editing) {
-      setFollowups(prev => prev.map(x => (x.id === editing.id ? { ...x, ...form } : x)));
-    } else {
-      setFollowups(prev => [...prev, { id: `f${Date.now()}`, ...form, createdAt: new Date().toISOString().slice(0, 10) }]);
-    }
+  const closeForm = () => {
     setShowForm(false);
     setEditing(null);
+    setError('');
+    setForm(emptyForm(currentUser));
   };
 
-  const removeFollowup = (id) => {
+  const saveFollowup = async () => {
+    if (!form.lead_id || !form.scheduled_date) {
+      setError('Lead and scheduled date are required.');
+      return;
+    }
+
+    if (editing?.id) {
+      await db.run(
+        `UPDATE crm_followups
+         SET lead_id=?, followup_type=?, scheduled_date=?, notes=?, outcome=?, next_followup_date=?
+         WHERE id=?`,
+        [
+          form.lead_id,
+          form.followup_type,
+          form.scheduled_date,
+          form.notes,
+          form.outcome,
+          form.next_followup_date || null,
+          editing.id
+        ]
+      );
+    } else {
+      const id = generateId();
+      await db.run(
+        `INSERT INTO crm_followups (id, lead_id, followup_type, scheduled_date, notes, outcome, next_followup_date, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          form.lead_id,
+          form.followup_type,
+          form.scheduled_date,
+          form.notes,
+          form.outcome,
+          form.next_followup_date || null,
+          currentUser?.id || null
+        ]
+      );
+      await db.run(
+        `INSERT INTO crm_alerts (id, type, title, message, scheduled_date, lead_id, followup_id, assigned_to, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          generateId(),
+          'followup',
+          'Follow-up Reminder',
+          `Follow-up scheduled for ${form.scheduled_date}`,
+          form.scheduled_date,
+          form.lead_id,
+          id,
+          form.assigned_to || currentUser?.id || null,
+          currentUser?.id || null
+        ]
+      );
+    }
+
+    closeForm();
+    await Promise.all([loadData(), loadCrmStats?.()]);
+  };
+
+  const completeFollowup = async (item) => {
+    await db.run(
+      `UPDATE crm_followups
+       SET actual_date = COALESCE(actual_date, date('now')),
+        outcome = COALESCE(NULLIF(outcome, ''), 'Completed')
+       WHERE id=?`,
+      [item.id]
+    );
+    await db.run('UPDATE crm_alerts SET is_completed=1, completed_at=datetime("now") WHERE followup_id=?', [item.id]);
+    await Promise.all([loadData(), loadCrmStats?.()]);
+  };
+
+  const removeFollowup = async (id) => {
     if (!window.confirm('Delete this follow-up?')) return;
-    setFollowups(prev => prev.filter(x => x.id !== id));
+    await db.run('DELETE FROM crm_followups WHERE id=?', [id]);
+    await db.run('UPDATE crm_alerts SET is_active=0 WHERE followup_id=?', [id]);
+    await Promise.all([loadData(), loadCrmStats?.()]);
   };
 
   return (
     <div style={{ padding: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 16 }}>
         <div>
           <h1 style={{ fontSize: 26, color: 'var(--text)', margin: 0 }}>Follow-ups Module</h1>
-          <p style={{ color: 'var(--text-muted)' }}>Track and act on every sales follow-up with clear timelines and status.</p>
+          <p style={{ color: 'var(--text-muted)' }}>Every row is linked to a CRM lead and updates CRM reminders.</p>
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <div style={{ position: 'relative' }}>
-            <Search size={16} style={{ position: 'absolute', left: 10, top: 12, color: 'var(--text-muted)' }} />
-            <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search follow-ups..."
-              style={{ padding: '10px 12px 10px 32px', borderRadius: 8, border: '1px solid var(--border)', minWidth: 240 }} />
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div className="search-bar" style={{ minWidth: 260 }}>
+            <Search size={16} color="var(--text-muted)" />
+            <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search follow-ups..." />
           </div>
-          <button onClick={() => openForm()} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--accent)', border: 'none', color: '#fff', borderRadius: 8, padding: '10px 14px', cursor: 'pointer' }}><Plus size={16}/>New follow-up</button>
+          <button className="btn btn-primary" onClick={() => openForm()}><Plus size={16} />New Follow-up</button>
         </div>
       </div>
 
-      <div style={{ overflowX: 'auto', marginBottom: 20 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead><tr style={{ background: 'var(--bg-secondary)' }}>
-            <th style={{ padding: '12px 10px', textAlign: 'left' }}>Lead</th>
-            <th style={{ padding: '12px 10px', textAlign: 'left' }}>Owner</th>
-            <th style={{ padding: '12px 10px', textAlign: 'left' }}>Contact</th>
-            <th style={{ padding: '12px 10px', textAlign: 'left' }}>Due</th>
-            <th style={{ padding: '12px 10px', textAlign: 'left' }}>Status</th>
-            <th style={{ padding: '12px 10px', textAlign: 'left' }}>Notes</th>
-            <th style={{ padding: '12px 10px', textAlign: 'center' }}>Actions</th>
-          </tr></thead>
-          <tbody>
-            {filtered.length === 0 && <tr><td colSpan={7} style={{ padding: 18, textAlign: 'center', color: 'var(--text-muted)' }}>No follow-ups found.</td></tr>}
-            {filtered.map(item => (
-              <tr key={item.id} style={{ borderTop: '1px solid var(--border)' }}>
-                <td style={{ padding: '10px' }}>{item.lead}</td>
-                <td style={{ padding: '10px' }}>{item.owner}</td>
-                <td style={{ padding: '10px' }}>{item.contactDate}</td>
-                <td style={{ padding: '10px' }}>{item.dueDate}</td>
-                <td style={{ padding: '10px', color: item.status === 'done' ? 'var(--success)' : 'var(--warning)' }}>{item.status}</td>
-                <td style={{ padding: '10px' }}>{item.notes}</td>
-                <td style={{ padding: '10px', textAlign: 'center' }}>
-                  <button onClick={() => openForm(item)} style={{ marginRight: 8, background: 'var(--primary-dim)', color: 'var(--primary)', border: '1px solid var(--border)', padding: 8, borderRadius: 6, cursor: 'pointer' }}><Edit size={14}/></button>
-                  <button onClick={() => removeFollowup(item.id)} style={{ background: 'var(--danger-dim)', color: 'var(--danger)', border: '1px solid var(--border)', padding: 8, borderRadius: 6, cursor: 'pointer' }}><Trash2 size={14}/></button>
-                </td>
+      <div className="catalogue-summary-grid" style={{ marginBottom: 18 }}>
+        <div className="catalogue-summary-card"><div className="catalogue-summary-title">Pending</div><strong>{counts.pending}</strong><span className="text-muted text-sm">Open actions</span></div>
+        <div className="catalogue-summary-card"><div className="catalogue-summary-title">Overdue</div><strong>{counts.overdue}</strong><span className={counts.overdue ? 'text-danger text-sm' : 'text-success text-sm'}>{counts.overdue ? 'Needs attention' : 'No overdue work'}</span></div>
+        <div className="catalogue-summary-card"><div className="catalogue-summary-title">Completed</div><strong>{counts.done}</strong><span className="text-muted text-sm">Closed follow-ups</span></div>
+      </div>
+
+      <div className="page-content" style={{ padding: 0 }}>
+        <div className="table-container" style={{ height: '100%' }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Lead</th>
+                <th>Type</th>
+                <th>Scheduled</th>
+                <th>Status</th>
+                <th>Outcome / Notes</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr><td colSpan={6}><div className="empty-state"><Calendar size={40} /><p>No follow-ups found</p></div></td></tr>
+              ) : filtered.map((item) => {
+                const isDone = Boolean(item.actual_date);
+                const isOverdue = !isDone && item.scheduled_date < today();
+                return (
+                  <tr key={item.id}>
+                    <td>
+                      <div className="catalogue-product-title">{item.company_name || item.contact_person || 'Unlinked lead'}</div>
+                      <div className="catalogue-product-meta"><span className="font-mono text-sm text-accent">{item.lead_number}</span><span>{item.contact_person || '-'}</span></div>
+                    </td>
+                    <td>{followupTypes.find((type) => type.value === item.followup_type)?.label || item.followup_type}</td>
+                    <td>{item.scheduled_date || '-'}</td>
+                    <td>
+                      <span className="badge" style={{ color: isDone ? 'var(--success)' : isOverdue ? 'var(--danger)' : 'var(--warning)', background: isDone ? 'var(--success-dim)' : isOverdue ? 'var(--danger-dim)' : 'var(--warning-dim)' }}>
+                        {isDone ? 'Done' : isOverdue ? 'Overdue' : 'Pending'}
+                      </span>
+                    </td>
+                    <td>
+                      <div>{item.outcome || '-'}</div>
+                      <div className="text-muted text-sm">{item.notes || '-'}</div>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {!isDone && <button className="btn btn-secondary btn-icon btn-sm" onClick={() => completeFollowup(item)} title="Complete"><CheckCircle size={14} /></button>}
+                        <button className="btn btn-secondary btn-icon btn-sm" onClick={() => openForm(item)} title="Edit"><Edit size={14} /></button>
+                        <button className="btn btn-danger btn-icon btn-sm" onClick={() => removeFollowup(item.id)} title="Delete"><Trash2 size={14} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {showForm && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 20 }}>
-          <div style={{ width: '720px', maxWidth: '100%', background: 'var(--bg-primary)', padding: 20, borderRadius: 12, boxShadow: '0 10px 28px rgba(0,0,0,.35)' }}>
-            <h2 style={{ margin: 0, marginBottom: 14, color: 'var(--text)' }}>{editing ? 'Edit Follow-up' : 'Create Follow-up'}</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-              <label style={{ fontSize: 13, color: 'var(--text-muted)' }}>Lead
-                <input type="text" value={form.lead} onChange={e => setForm({ ...form, lead: e.target.value })} style={{ marginTop: 6, width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-secondary)' }} />
-              </label>
-              <label style={{ fontSize: 13, color: 'var(--text-muted)' }}>Owner
-                <input type="text" value={form.owner} onChange={e => setForm({ ...form, owner: e.target.value })} style={{ marginTop: 6, width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-secondary)' }} />
-              </label>
-              <label style={{ fontSize: 13, color: 'var(--text-muted)' }}>Contact Date
-                <input type="date" value={form.contactDate} onChange={e => setForm({ ...form, contactDate: e.target.value })} style={{ marginTop: 6, width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-secondary)' }} />
-              </label>
-              <label style={{ fontSize: 13, color: 'var(--text-muted)' }}>Due Date
-                <input type="date" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} style={{ marginTop: 6, width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-secondary)' }} />
-              </label>
-              <label style={{ fontSize: 13, color: 'var(--text-muted)' }}>Status
-                <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} style={{ marginTop: 6, width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
-                  <option value="pending">Pending</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="done">Done</option>
-                </select>
-              </label>
-              <label style={{ gridColumn: 'span 2', fontSize: 13, color: 'var(--text-muted)' }}>Notes
-                <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={3} style={{ marginTop: 6, width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-secondary)' }} />
-              </label>
+        <div className="modal-overlay" onClick={(event) => event.target === event.currentTarget && closeForm()}>
+          <div className="modal modal-lg">
+            <div className="modal-header">
+              <div>
+                <h3>{editing ? 'Edit Follow-up' : 'Create Follow-up'}</h3>
+                <div className="text-secondary text-sm" style={{ marginTop: 4 }}>Select a CRM lead so this action appears in the lead timeline and dashboard.</div>
+              </div>
+              <button className="close-btn" onClick={closeForm}>x</button>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
-              <button onClick={() => setShowForm(false)} style={{ background: 'var(--bg-secondary)', color: 'var(--text)', border: '1px solid var(--border)', padding: '8px 16px', borderRadius: 8 }}>Cancel</button>
-              <button onClick={saveFollowup} style={{ background: 'var(--accent)', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8 }}>{editing ? 'Update' : 'Save'}</button>
+            <div className="modal-body" style={{ display: 'grid', gap: 14 }}>
+              {error && <div className="catalogue-form-alert"><span>{error}</span></div>}
+              <div className="form-group">
+                <label className="form-label">Lead *</label>
+                <select className="form-control" value={form.lead_id} onChange={(e) => setForm({ ...form, lead_id: e.target.value })}>
+                  <option value="">Select lead...</option>
+                  {leads.map((lead) => <option key={lead.id} value={lead.id}>{lead.lead_number} - {lead.company_name || lead.contact_person || 'Lead'}</option>)}
+                </select>
+              </div>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Type</label>
+                  <select className="form-control" value={form.followup_type} onChange={(e) => setForm({ ...form, followup_type: e.target.value })}>
+                    {followupTypes.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Scheduled Date *</label>
+                  <input className="form-control" type="date" value={form.scheduled_date} onChange={(e) => setForm({ ...form, scheduled_date: e.target.value })} />
+                </div>
+              </div>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Outcome</label>
+                  <input className="form-control" value={form.outcome} onChange={(e) => setForm({ ...form, outcome: e.target.value })} placeholder="Interested, demo requested..." />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Next Follow-up</label>
+                  <input className="form-control" type="date" value={form.next_followup_date} onChange={(e) => setForm({ ...form, next_followup_date: e.target.value })} />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Notes</label>
+                <textarea className="form-control" rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={closeForm}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveFollowup}>{editing ? 'Update' : 'Save'}</button>
             </div>
           </div>
         </div>
       )}
     </div>
   );
-};
-
-export default FollowupsView;
+}

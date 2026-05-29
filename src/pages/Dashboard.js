@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import db, { formatCurrency, formatDate } from '../utils/database';
+import { isLightTheme } from '../utils/themes';
 import {
   AlertTriangle, ArrowRight, Boxes, Briefcase, CheckCircle, ClipboardList,
   Clock3, FileText, Flame, LayoutGrid, Package, ShoppingCart, Sparkles,
@@ -64,6 +65,20 @@ export default function Dashboard() {
   const [lowStockItems, setLowStockItems] = useState([]);
   const [chartData, setChartData] = useState([]);
   const [orderStatusData, setOrderStatusData] = useState([]);
+  const [orderSummary, setOrderSummary] = useState({
+    salesCount: 0,
+    purchaseCount: 0,
+    openSales: 0,
+    openPurchases: 0,
+    salesValue: 0,
+    purchaseValue: 0,
+    overdueSales: 0,
+    overduePurchases: 0,
+    averageOrderValue: 0,
+    recentMovement: []
+  });
+  const [orderTypeData, setOrderTypeData] = useState([]);
+  const [orderStageData, setOrderStageData] = useState([]);
   const [topCustomers, setTopCustomers] = useState([]);
   const [headline, setHeadline] = useState({
     inventoryValue: 0,
@@ -96,7 +111,15 @@ export default function Dashboard() {
       deliveredRow,
       quotationValueRow,
       customerValueRows,
-      orderStatusRows
+      orderStatusRows,
+      salesSummaryRow,
+      purchaseSummaryRow,
+      salesOpenRow,
+      purchaseOpenRow,
+      salesOverdueRow,
+      purchaseOverdueRow,
+      purchaseStatusRows,
+      recentPurchaseOrders
     ] = await Promise.all([
       db.all(`SELECT o.*, c.name as customer_name, c.company as customer_company
         FROM orders o LEFT JOIN contacts c ON o.customer_id = c.id
@@ -126,7 +149,33 @@ export default function Dashboard() {
       db.all(`SELECT status, COUNT(*) as count
         FROM orders
         GROUP BY status
-        ORDER BY count DESC`)
+        ORDER BY count DESC`),
+      db.get(`SELECT COUNT(*) as count, COALESCE(SUM(total_amount), 0) as total
+        FROM orders`),
+      db.get(`SELECT COUNT(*) as count, COALESCE(SUM(total_amount), 0) as total
+        FROM purchase_orders`),
+      db.get(`SELECT COUNT(*) as count, COALESCE(SUM(total_amount), 0) as total
+        FROM orders WHERE status IN ('pending', 'confirmed', 'in_production', 'ready', 'shipped')`),
+      db.get(`SELECT COUNT(*) as count, COALESCE(SUM(total_amount), 0) as total
+        FROM purchase_orders WHERE status IN ('pending', 'approved', 'ordered', 'partial')`),
+      db.get(`SELECT COUNT(*) as count
+        FROM orders
+        WHERE delivery_date IS NOT NULL
+          AND delivery_date < date('now')
+          AND status NOT IN ('delivered', 'cancelled')`),
+      db.get(`SELECT COUNT(*) as count
+        FROM purchase_orders
+        WHERE expected_date IS NOT NULL
+          AND expected_date < date('now')
+          AND status NOT IN ('received', 'cancelled', 'closed')`),
+      db.all(`SELECT status, COUNT(*) as count
+        FROM purchase_orders
+        GROUP BY status
+        ORDER BY count DESC`),
+      db.all(`SELECT po.*, c.name as vendor_name, c.company as vendor_company
+        FROM purchase_orders po
+        LEFT JOIN contacts c ON po.vendor_id = c.id
+        ORDER BY po.created_at DESC LIMIT 3`)
     ]);
 
     const months = [];
@@ -157,6 +206,66 @@ export default function Dashboard() {
       ...row,
       fill: chartColors[index % chartColors.length]
     })));
+    const salesCount = salesSummaryRow?.count || 0;
+    const purchaseCount = purchaseSummaryRow?.count || 0;
+    const salesValue = salesSummaryRow?.total || 0;
+    const purchaseValue = purchaseSummaryRow?.total || 0;
+    const openSales = salesOpenRow?.count || 0;
+    const openPurchases = purchaseOpenRow?.count || 0;
+    const salesOpenValue = salesOpenRow?.total || 0;
+    const purchaseOpenValue = purchaseOpenRow?.total || 0;
+    const totalOrderCount = salesCount + purchaseCount;
+    const totalOrderValue = salesValue + purchaseValue;
+    const salesStageRows = (orderStatusRows || []).map((row) => ({
+      stage: `${row.status || 'unknown'}`.replace(/_/g, ' '),
+      Sales: Number(row.count) || 0,
+      Purchase: 0
+    }));
+    const stageMap = salesStageRows.reduce((acc, row) => ({ ...acc, [row.stage]: row }), {});
+    (purchaseStatusRows || []).forEach((row) => {
+      const stage = `${row.status || 'unknown'}`.replace(/_/g, ' ');
+      if (!stageMap[stage]) {
+        stageMap[stage] = { stage, Sales: 0, Purchase: 0 };
+      }
+      stageMap[stage].Purchase = Number(row.count) || 0;
+    });
+    setOrderSummary({
+      salesCount,
+      purchaseCount,
+      openSales,
+      openPurchases,
+      salesValue,
+      purchaseValue,
+      openValue: salesOpenValue + purchaseOpenValue,
+      overdueSales: salesOverdueRow?.count || 0,
+      overduePurchases: purchaseOverdueRow?.count || 0,
+      averageOrderValue: totalOrderCount ? totalOrderValue / totalOrderCount : 0,
+      recentMovement: [
+        ...(orders || []).slice(0, 3).map((order) => ({
+          id: order.id,
+          type: 'Sales',
+          number: order.order_number,
+          party: order.customer_company || order.customer_name || 'Customer',
+          amount: order.total_amount || 0,
+          date: order.created_at || order.order_date,
+          status: order.status
+        })),
+        ...(recentPurchaseOrders || []).map((order) => ({
+          id: order.id,
+          type: 'Purchase',
+          number: order.po_number,
+          party: order.vendor_company || order.vendor_name || 'Vendor',
+          amount: order.total_amount || 0,
+          date: order.created_at || order.order_date,
+          status: order.status
+        }))
+      ].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)).slice(0, 5)
+    });
+    setOrderTypeData([
+      { type: 'Sales Orders', count: salesCount, value: salesValue, open: openSales, fill: '#3d7fff' },
+      { type: 'Purchase Orders', count: purchaseCount, value: purchaseValue, open: openPurchases, fill: '#22c55e' }
+    ]);
+    setOrderStageData(Object.values(stageMap).sort((a, b) => (b.Sales + b.Purchase) - (a.Sales + a.Purchase)).slice(0, 6));
     setHeadline({
       inventoryValue: inventoryValueRow?.total || 0,
       monthlyOrderValue: orderValueRow?.total || 0,
@@ -234,7 +343,7 @@ export default function Dashboard() {
     { label: 'Review Inventory', route: '/inventory', icon: Package, tone: '#06b6d4' },
     { label: 'Open Accounting', route: '/accounting', icon: Wallet, tone: '#22c55e' }
   ];
-  const isLightTheme = theme === 'light';
+  const lightThemeActive = isLightTheme(theme);
 
   return (
     <div className="page">
@@ -317,10 +426,10 @@ export default function Dashboard() {
               borderRadius: 20,
               padding: 18,
               border: '1px solid var(--border)',
-              background: isLightTheme
+              background: lightThemeActive
                 ? 'radial-gradient(circle at top right, rgba(61,127,255,0.12), transparent 34%), linear-gradient(180deg, rgba(255,255,255,0.92), rgba(255,255,255,0.82)), var(--bg-secondary)'
                 : 'radial-gradient(circle at top right, rgba(61,127,255,0.16), transparent 34%), linear-gradient(180deg, rgba(11,17,32,0.96), rgba(11,17,32,0.90)), var(--bg-secondary)',
-              boxShadow: isLightTheme ? '0 12px 28px rgba(148,163,184,0.10)' : '0 18px 34px rgba(0,0,0,0.28)',
+              boxShadow: lightThemeActive ? '0 12px 28px rgba(148,163,184,0.10)' : '0 18px 34px rgba(0,0,0,0.28)',
               display: 'flex',
               flexDirection: 'column',
               gap: 12
@@ -340,7 +449,7 @@ export default function Dashboard() {
                   borderRadius: 16,
                   padding: 14,
                   border: '1px solid var(--border)',
-                  background: isLightTheme
+                  background: lightThemeActive
                     ? `linear-gradient(180deg, ${card.color}12, rgba(255,255,255,0.82))`
                     : `linear-gradient(180deg, ${card.color}16, rgba(15,23,42,0.92))`
                 }}
@@ -412,6 +521,137 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        <section className="order-command">
+          <div className="order-command__hero">
+            <div>
+              <div className="catalogue-hero-kicker"><ShoppingCart size={13} /> Order Summary Command Center</div>
+              <h3>One clear board for every order moving through the business.</h3>
+              <p>
+                Sales demand, purchase commitments, overdue promises, value exposure, and recent order movement are grouped here so operators can decide what needs action without hunting across modules.
+              </p>
+            </div>
+            <div className="order-command__score">
+              <span>Total Orders</span>
+              <strong>{orderSummary.salesCount + orderSummary.purchaseCount}</strong>
+              <small>{orderSummary.openSales + orderSummary.openPurchases} open right now</small>
+            </div>
+          </div>
+
+          <div className="order-command__metrics">
+            <div className="order-command__metric tone-blue">
+              <span>Sales Orders</span>
+              <strong>{orderSummary.salesCount}</strong>
+              <small>{formatCurrency(orderSummary.salesValue, currencySymbol)} booked value</small>
+            </div>
+            <div className="order-command__metric tone-green">
+              <span>Purchase Orders</span>
+              <strong>{orderSummary.purchaseCount}</strong>
+              <small>{formatCurrency(orderSummary.purchaseValue, currencySymbol)} committed value</small>
+            </div>
+            <div className="order-command__metric tone-amber">
+              <span>Open Order Value</span>
+              <strong>{formatCurrency(orderSummary.openValue || 0, currencySymbol)}</strong>
+              <small>{orderSummary.openSales} sales + {orderSummary.openPurchases} purchase open</small>
+            </div>
+            <div className="order-command__metric tone-red">
+              <span>Overdue Signals</span>
+              <strong>{orderSummary.overdueSales + orderSummary.overduePurchases}</strong>
+              <small>{orderSummary.overdueSales} sales + {orderSummary.overduePurchases} purchase overdue</small>
+            </div>
+            <div className="order-command__metric tone-violet">
+              <span>Average Order Size</span>
+              <strong>{formatCurrency(orderSummary.averageOrderValue, currencySymbol)}</strong>
+              <small>Across sales and purchase order books</small>
+            </div>
+          </div>
+
+          <div className="order-command__body">
+            <div className="order-command__panel">
+              <div className="card-header compact">
+                <div>
+                  <h4>Order Type Breakdown</h4>
+                  <p className="text-secondary text-sm">Number of orders and value by order type</p>
+                </div>
+                <Briefcase size={18} color="var(--accent)" />
+              </div>
+              <div className="order-command__chart">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={orderTypeData} margin={{ top: 8, right: 10, left: 0, bottom: 4 }}>
+                    <CartesianGrid stroke="rgba(148,163,184,0.10)" vertical={false} />
+                    <XAxis dataKey="type" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<CountTooltip />} />
+                    <Bar dataKey="count" name="Orders" radius={[8, 8, 0, 0]} barSize={42}>
+                      {orderTypeData.map((entry) => <Cell key={entry.type} fill={entry.fill} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="order-command__type-list">
+                {orderTypeData.map((entry) => (
+                  <div key={entry.type}>
+                    <span><i style={{ background: entry.fill }} />{entry.type}</span>
+                    <strong>{entry.count} orders</strong>
+                    <small>{formatCurrency(entry.value, currencySymbol)} total, {entry.open} open</small>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="order-command__panel">
+              <div className="card-header compact">
+                <div>
+                  <h4>Status Heatmap</h4>
+                  <p className="text-secondary text-sm">Sales and purchase order count by stage</p>
+                </div>
+                <ClipboardList size={18} color="var(--warning)" />
+              </div>
+              <div className="order-command__chart">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={orderStageData} layout="vertical" margin={{ top: 4, right: 10, bottom: 4, left: 24 }}>
+                    <CartesianGrid stroke="rgba(148,163,184,0.10)" horizontal={true} vertical={false} />
+                    <XAxis type="number" hide />
+                    <YAxis dataKey="stage" type="category" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} width={96} />
+                    <Tooltip />
+                    <Bar dataKey="Sales" stackId="a" fill="#3d7fff" radius={[0, 0, 0, 0]} barSize={18} />
+                    <Bar dataKey="Purchase" stackId="a" fill="#22c55e" radius={[0, 10, 10, 0]} barSize={18} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="order-command__panel">
+              <div className="card-header compact">
+                <div>
+                  <h4>Recent Order Movement</h4>
+                  <p className="text-secondary text-sm">Latest sales and purchase activity</p>
+                </div>
+                <Clock3 size={18} color="var(--info)" />
+              </div>
+              <div className="order-command__movement">
+                {orderSummary.recentMovement.length === 0 ? (
+                  <div className="empty-state" style={{ minHeight: 220 }}>
+                    <ShoppingCart size={34} />
+                    <p>No order activity yet.</p>
+                  </div>
+                ) : orderSummary.recentMovement.map((entry) => (
+                  <div key={`${entry.type}-${entry.id}`} className="order-command__movement-row">
+                    <div>
+                      <span className={`order-command__type-pill ${entry.type === 'Sales' ? 'sales' : 'purchase'}`}>{entry.type}</span>
+                      <strong>{entry.number || '-'}</strong>
+                      <small>{entry.party}</small>
+                    </div>
+                    <div>
+                      <strong>{formatCurrency(entry.amount || 0, currencySymbol)}</strong>
+                      {getStatusBadge(entry.status)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 1fr 1fr', gap: 18 }}>
           <div className="card">

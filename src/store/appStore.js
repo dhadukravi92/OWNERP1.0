@@ -1,6 +1,32 @@
 import { create } from 'zustand';
 import db from '../utils/database';
-import { getNextSequence, sanitizeCurrencySymbol } from '../utils/database';
+import { generateDocNumber, getNextSequence, sanitizeCurrencySymbol } from '../utils/database';
+import { DEFAULT_DARK_THEME_ID, DEFAULT_THEME_ID, getThemeMode } from '../utils/themes';
+
+const THEME_STORAGE_KEY = 'ownerp:theme';
+
+const nullableForeignKey = (value) => {
+  const normalized = `${value || ''}`.trim();
+  return normalized || null;
+};
+
+function readStoredTheme() {
+  return normalizeThemeId(localStorage.getItem(THEME_STORAGE_KEY) || localStorage.getItem('theme') || DEFAULT_THEME_ID);
+}
+
+function normalizeThemeId(themeId) {
+  if (themeId === 'light') return DEFAULT_THEME_ID;
+  if (themeId === 'dark') return DEFAULT_DARK_THEME_ID;
+  return themeId || DEFAULT_THEME_ID;
+}
+
+function persistTheme(themeId, userId = null) {
+  localStorage.setItem(THEME_STORAGE_KEY, themeId);
+  localStorage.setItem('theme', themeId);
+  if (userId) {
+    localStorage.setItem(`${THEME_STORAGE_KEY}:${userId}`, themeId);
+  }
+}
 
 export const useAppStore = create((set, get) => ({
   // Auth
@@ -15,7 +41,9 @@ export const useAppStore = create((set, get) => ({
       );
       if (user) {
         await db.run("UPDATE users SET last_login = datetime('now') WHERE id = ?", [user.id]);
-        set({ currentUser: user, isAuthenticated: true });
+        const resolvedTheme = normalizeThemeId(user.preferred_theme || localStorage.getItem(`${THEME_STORAGE_KEY}:${user.id}`) || readStoredTheme());
+        persistTheme(resolvedTheme, user.id);
+        set({ currentUser: user, isAuthenticated: true, theme: resolvedTheme });
         return { success: true, user };
       }
       return { success: false, error: 'Invalid credentials' };
@@ -111,13 +139,27 @@ export const useAppStore = create((set, get) => ({
   },
   
   // Theme
-  theme: localStorage.getItem('theme') || 'dark',
-  toggleTheme: () => {
-    set(state => {
-      const newTheme = state.theme === 'dark' ? 'light' : 'dark';
-      localStorage.setItem('theme', newTheme);
-      return { theme: newTheme };
-    });
+  theme: readStoredTheme(),
+  setTheme: async (themeId) => {
+    const normalizedThemeId = normalizeThemeId(themeId);
+    const currentUserId = get().currentUser?.id || null;
+    persistTheme(normalizedThemeId, currentUserId);
+
+    if (currentUserId) {
+      await db.run('UPDATE users SET preferred_theme = ? WHERE id = ?', [normalizedThemeId, currentUserId]);
+      set((state) => ({
+        theme: normalizedThemeId,
+        currentUser: state.currentUser ? { ...state.currentUser, preferred_theme: normalizedThemeId } : state.currentUser
+      }));
+      return;
+    }
+
+    set({ theme: normalizedThemeId });
+  },
+  toggleTheme: async () => {
+    const currentTheme = get().theme;
+    const nextTheme = getThemeMode(currentTheme) === 'dark' ? DEFAULT_THEME_ID : DEFAULT_DARK_THEME_ID;
+    await get().setTheme(nextTheme);
   },
   
   // Active module
@@ -201,15 +243,36 @@ export const useAppStore = create((set, get) => ({
   // CRM Inquiries
   createInquiry: async (inquiryData) => {
     try {
+      const duplicate = await db.get(`
+        SELECT id, inquiry_number
+        FROM crm_inquiries
+        WHERE status NOT IN ('converted', 'lost')
+          AND (
+            (phone IS NOT NULL AND phone != '' AND phone = ?)
+            OR (email IS NOT NULL AND email != '' AND LOWER(email) = LOWER(?))
+          )
+          AND LOWER(COALESCE(product_interest, '')) = LOWER(?)
+        LIMIT 1
+      `, [
+        inquiryData.phone || '',
+        inquiryData.email || '',
+        inquiryData.product_interest || ''
+      ]);
+
+      if (duplicate?.id) {
+        return { success: false, duplicate: true, id: duplicate.id, error: `Duplicate inquiry already exists: ${duplicate.inquiry_number || duplicate.id}` };
+      }
+
       const id = 'inq_' + Date.now();
-      const inquiryNumber = await getNextSequence('crm_inquiries', 'inquiry_number', 'INQ');
+      const inquiryNumber = generateDocNumber('INQ', await getNextSequence('crm_inquiries', 'inquiry_number', 'INQ'));
+      const assignedTo = nullableForeignKey(inquiryData.assigned_to);
       await db.run(`
         INSERT INTO crm_inquiries (id, inquiry_number, source, customer_name, company, email, phone, 
           product_interest, quantity, requirements, priority, assigned_to, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       `, [id, inquiryNumber, inquiryData.source, inquiryData.customer_name, inquiryData.company,
           inquiryData.email, inquiryData.phone, inquiryData.product_interest, inquiryData.quantity,
-          inquiryData.requirements, inquiryData.priority, inquiryData.assigned_to]);
+          inquiryData.requirements, inquiryData.priority, assignedTo]);
 
       await get().addNotification('info', 'New Inquiry', `Inquiry ${inquiryNumber} created`, id, 'inquiry');
       return { success: true, id };
@@ -221,21 +284,34 @@ export const useAppStore = create((set, get) => ({
   // CRM Leads
   createLead: async (leadData) => {
     try {
+      if (leadData.inquiry_id) {
+        const duplicate = await db.get(`
+          SELECT id, lead_number FROM crm_leads
+          WHERE inquiry_id = ? AND status NOT IN ('closed_won', 'closed_lost')
+          LIMIT 1
+        `, [leadData.inquiry_id]);
+        if (duplicate?.id) {
+          return { success: false, duplicate: true, id: duplicate.id, error: `Active lead already exists: ${duplicate.lead_number || duplicate.id}` };
+        }
+      }
+
       const id = 'lead_' + Date.now();
-      const leadNumber = await getNextSequence('crm_leads', 'lead_number', 'LEAD');
+      const leadNumber = generateDocNumber('LEAD', await getNextSequence('crm_leads', 'lead_number', 'LEAD'));
+      const assignedTo = nullableForeignKey(leadData.assigned_to);
+      const createdBy = nullableForeignKey(get().currentUser?.id);
       await db.run(`
         INSERT INTO crm_leads (id, lead_number, inquiry_id, customer_id, status, value, probability,
-          expected_close_date, industry, lead_source, notes, assigned_to, created_by, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+          expected_close_date, industry, lead_source, priority, notes, assigned_to, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       `, [id, leadNumber, leadData.inquiry_id, leadData.customer_id, leadData.status, leadData.value,
           leadData.probability, leadData.expected_close_date, leadData.industry, leadData.lead_source,
-          leadData.notes, leadData.assigned_to, get().currentUser?.id]);
+          leadData.priority || 'medium', leadData.notes, assignedTo, createdBy]);
 
       // Log activity
       await db.run(`
         INSERT INTO crm_activities (id, lead_id, activity_type, description, created_by)
         VALUES (?, ?, ?, ?, ?)
-      `, ['act_' + Date.now(), id, 'created', 'Lead created', get().currentUser?.id]);
+      `, ['act_' + Date.now(), id, 'created', 'Lead created', createdBy]);
 
       await get().addNotification('info', 'New Lead', `Lead ${leadNumber} created`, id, 'lead');
       return { success: true, id };
@@ -271,7 +347,7 @@ export const useAppStore = create((set, get) => ({
   createCrmQuotation: async (quotationData) => {
     try {
       const id = 'crm_quote_' + Date.now();
-      const quotationNumber = await getNextSequence('crm_quotations', 'quotation_number', 'CRM-Q');
+      const quotationNumber = generateDocNumber('CRM-Q', await getNextSequence('crm_quotations', 'quotation_number', 'CRM-Q'));
       await db.run(`
         INSERT INTO crm_quotations (id, quotation_number, lead_id, customer_id, status, valid_till,
           discount_percent, tax_amount, total_amount, notes, terms, created_by, created_at, updated_at)
